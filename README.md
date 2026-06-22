@@ -1,0 +1,148 @@
+# cluster-infra-mini
+
+A **deployable miniature** of the [`cluster-infra`](../cluster-infra) reference
+design: the exact same agent-driven, reconciliation-based control plane, security
+gate, networking model, observability and test suite — but scaled to a small,
+real, multi-cloud **managed-Kubernetes** fleet you can actually stand up in the
+cloud:
+
+| Cloud | Managed service | Nodes | Size |
+|---|---|---|---|
+| AWS | **EKS** (managed node group) | 2 | `t3.medium` |
+| GCP | **GKE Autopilot** | auto (Google-managed) | n/a |
+| Azure | **AKS** (default node pool) | 2 | `Standard_D2s_v3` |
+
+The Python control plane is **identical in design** to the reference project and
+runs fully offline (simulated providers) to prove the lifecycle logic before you
+spend a cent. The `iac/terraform/` tree is **real, `terraform validate`-clean
+HCL** that provisions the managed clusters + networking for actual cloud testing.
+
+The three clusters are **joined into one active-active fabric** (`mesh/`): all
+clouds serve traffic at once, and on a cloud outage traffic redistributes to the
+survivors automatically — Istio multi-primary (east-west) + global DNS
+(north-south) + CockroachDB (multi-master data). The Python node **agent** and
+**per-node observability** stay in place across all three clouds.
+
+## Two layers, one model
+
+```
+            ┌─────────────────────────────────────────────┐
+ offline    │  Python control plane (same as cluster-infra)│   python -m sim.multicloud
+ (proves    │  reconciler · security gate · self-heal ·    │   python -m tests.run all
+  the logic)│  networking model · observability · 74 tests │
+            └─────────────────────────────────────────────┘
+                         declares the same fleet
+            ┌─────────────────────────────────────────────┐
+ real       │  iac/terraform  →  EKS + GKE Autopilot + AKS │   terraform apply
+ (deploys   │  per-cloud VPC/VNet + subnets + node pools   │   kubectl get nodes
+  to cloud) └─────────────────────────────────────────────┘
+```
+
+## Layout
+```
+control_plane/  providers/  agent/  security/  networking/  workflows/
+observability/  tests/  sim/  cli.py            # same design as cluster-infra
+iac/terraform/                                   # REAL deployable IaC
+  main.tf versions.tf variables.tf outputs.tf terraform.tfvars.example
+  modules/eks/   (terraform-aws-modules VPC + EKS, 2x t3.medium)
+  modules/gke/   (GKE Autopilot, VPC-native)
+  modules/aks/   (VNet + AKS, 2x Standard_D2s_v3)
+  modules/global_dns/  (Route53 active-active across the 3 ingresses)
+iac/atlantis.yaml                                # PR-driven plan/apply
+iac/vault/                                       # Vault config-as-code (policies + OIDC setup)
+mesh/                                            # ACTIVE-ACTIVE fabric (joins the 3 clusters)
+  install/    Istio multi-primary (shared CA, east-west gateways, remote secrets)
+  apps/       global service + locality-aware load balancing + failover
+  observability/  per-node node-exporter DaemonSet + federated Prometheus
+  data/       CockroachDB multi-region (multi-master, survive region failure)
+  secrets/    External Secrets Operator -> pulls app secrets from Vault
+DEPLOY.md  CICD.md  VAULT.md                      # deploy, CI/CD, and secret-management guides
+```
+
+## Quickstart — prove the logic offline (no cloud, no deps)
+```bash
+# the mini fleet the IaC deploys: 3 managed clouds, reconciled to HEALTHY
+python -m sim.multicloud
+
+# full lifecycle: provision -> rolling update -> self-heal -> decommission
+python -m sim.simulate
+
+# ACTIVE-ACTIVE: balance traffic across all clouds, then survive a cloud outage
+python -m sim.active_active
+
+# observed run -> writes dashboard.html
+python -m sim.observe
+
+# the test suite (same design as the reference + the active-active traffic model)
+python -m tests.run all
+```
+
+## Deploy for real (managed K8s in the cloud)
+See **[DEPLOY.md](DEPLOY.md)** for the full walk-through. In short:
+```bash
+cd iac/terraform
+cp terraform.tfvars.example terraform.tfvars   # set gcp_project; toggle clouds
+terraform init
+terraform plan
+terraform apply
+# then use the printed kubeconfig commands, e.g.:
+aws eks update-kubeconfig --region us-east-1 --name fleet-mini-eks
+kubectl get nodes -o wide                        # 2 Ready t3.medium nodes
+```
+Each cloud has an `enable_<cloud>` switch so you can deploy **one at a time** to
+limit cost. Tear everything down with `terraform destroy`.
+
+### Or deploy via CI/CD (GitHub Actions)
+For repeatable, approval-gated deploys, [.github/workflows/deploy.yml](.github/workflows/deploy.yml)
+runs `plan` on every PR (commented on the PR), `apply` on merge to `main` (gated by
+a `production` environment), and `destroy` on manual dispatch — with **keyless OIDC
+auth** to all three clouds (no static cloud keys). One-time setup (remote state +
+OIDC) is in **[CICD.md](CICD.md)**.
+
+### Secret management with HashiCorp Vault
+All secrets live in **Vault**, not GitHub. The pipeline pulls cloud identifiers via
+**GitHub OIDC → Vault** (`hashicorp/vault-action`, short-lived tokens), and the
+clusters pull runtime app secrets (CockroachDB, Grafana) via **External Secrets
+Operator**. GitHub stores only the public `VAULT_ADDR`. Setup + config-as-code
+(`iac/vault/`, least-privilege policies) is in **[VAULT.md](VAULT.md)**.
+
+## How this maps to the reference design
+The architecture, lifecycle state machines, safety budgets, security gate,
+networking fabric and operational runbook are unchanged — see the copied
+[`ARCHITECTURE.md`](ARCHITECTURE.md), [`RUNBOOK.md`](RUNBOOK.md) and
+[`TESTING.md`](TESTING.md). The only differences are deployment-facing:
+
+| Aspect | cluster-infra (reference) | cluster-infra-mini (this) |
+|---|---|---|
+| Scale | up to 10,000 simulated nodes | 2 medium nodes per cloud (real) |
+| Backends | aws/gcp/azure/bare-metal (simulated) | EKS / GKE Autopilot / AKS (real IaC) |
+| IaC | illustrative stubs | real, `validate`-clean, deployable |
+| Purpose | prove design at scale, offline | test an actual cloud deployment |
+| Control plane | identical | identical |
+| Tests | 74, all green | 74, all green |
+
+## Active-active, not backup
+All three clouds serve traffic concurrently and the fleet behaves as one:
+- **East-west** (service→service): Istio multi-primary *global services* with
+  locality-aware load balancing + outlier-detection failover (`mesh/`).
+- **North-south** (user→app): global DNS across all 3 ingresses, health-checked
+  (`iac/terraform/modules/global_dns`).
+- **Data**: CockroachDB multi-region, every cloud read+write, survives region loss.
+- **On a cloud outage** traffic redistributes to the survivors automatically and
+  rebalances on recovery — modeled and tested offline by `sim.active_active` +
+  `networking/global_lb.py` (`GlobalTrafficDirector`).
+
+The Python **node agent** (bootstrap/attest/health/drain) and **per-node
+observability** (node-exporter DaemonSet + Istio signals + control-plane
+telemetry) remain across all three clouds — see `mesh/observability/`.
+
+## Status (verified)
+- **Tests: 80, all green** (`smoke 8 + unit 43 + integration 24 + chaos 5`).
+- **Simulations run clean** — `sim.multicloud` (6/6 HEALTHY across 3 clouds),
+  `sim.simulate`, `sim.active_active` (balance → outage → redistribute → recover),
+  `sim.observe` (writes `dashboard.html`).
+- **IaC valid** — `terraform validate` → "Success!"; `terraform fmt` clean;
+  `terraform init` resolves all providers/modules.
+
+> Cloud resources cost money. Always `terraform destroy` after testing. GKE
+> Autopilot bills per Pod resource request; EKS/AKS bill per node + control plane.

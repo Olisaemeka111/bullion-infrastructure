@@ -1,0 +1,22 @@
+# CockroachDB Helm values — GCP / GKE region of the multi-cloud cluster.
+statefulset:
+  replicas: 3
+
+conf:
+  locality: "cloud=gcp,region=us-central1"
+  join:
+    - crdb-cockroachdb-0.eks.fleet.internal:26257
+    - crdb-cockroachdb-0.aks.fleet.internal:26257
+  cluster-name: fleet-crdb
+  single-node: false
+
+tls:
+  enabled: true
+
+resources:
+  requests: { cpu: "500m", memory: "2Gi" }
+  limits: { cpu: "1", memory: "4Gi" }
+
+storage:
+  persistentVolume:
+    size: 20Gi

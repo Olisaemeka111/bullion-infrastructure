@@ -1,0 +1,237 @@
+name: deploy
+
+# Multi-cloud managed-K8s deploy pipeline.
+#   * PR touching iac/terraform  -> terraform plan (commented on the PR)
+#   * merge to main              -> terraform apply (gated by the `production` env)
+#   * manual run (workflow_dispatch action=destroy) -> terraform destroy
+#
+# Secrets are managed in HashiCorp Vault and pulled via GitHub OIDC (no static
+# Vault token, no cloud keys in GitHub). Cloud auth itself stays keyless OIDC —
+# Vault just holds the identifiers. See VAULT.md + CICD.md for the one-time setup.
+
+on:
+  pull_request:
+    paths: ["iac/terraform/**", ".github/workflows/deploy.yml"]
+  push:
+    branches: [main]
+    paths: ["iac/terraform/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action"
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+
+permissions:
+  id-token: write        # required for Vault OIDC + cloud OIDC
+  contents: read
+  pull-requests: write   # required to comment the plan
+
+env:
+  TF_IN_AUTOMATION: "true"
+  ARM_USE_OIDC: "true"
+  TF_VAR_enable_aws: ${{ vars.ENABLE_AWS || 'true' }}
+  TF_VAR_enable_gcp: ${{ vars.ENABLE_GCP || 'true' }}
+  TF_VAR_enable_azure: ${{ vars.ENABLE_AZURE || 'true' }}
+
+jobs:
+  # ---------------------------------------------------------------- PLAN -----
+  plan:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: iac/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.4"
+
+      - name: Pull cloud identifiers from Vault (OIDC)
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ vars.VAULT_ADDR }}
+          namespace: ${{ vars.VAULT_NAMESPACE || 'admin' }}
+          method: jwt
+          role: github-actions
+          jwtGithubAudience: https://github.com/${{ github.repository_owner }}
+          exportToken: false
+          secrets: |
+            secret/data/cluster-infra-mini/cloud AWS_ROLE_ARN | AWS_ROLE_ARN ;
+            secret/data/cluster-infra-mini/cloud GCP_WIF_PROVIDER | GCP_WIF_PROVIDER ;
+            secret/data/cluster-infra-mini/cloud GCP_SERVICE_ACCOUNT | GCP_SERVICE_ACCOUNT ;
+            secret/data/cluster-infra-mini/cloud GCP_PROJECT | TF_VAR_gcp_project ;
+            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | AZURE_CLIENT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | ARM_CLIENT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | AZURE_TENANT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | ARM_TENANT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | AZURE_SUBSCRIPTION_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | ARM_SUBSCRIPTION_ID
+
+      - name: Auth AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - name: Auth GCP (OIDC / Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+      - name: Auth Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=cluster-infra-mini/terraform.tfstate" \
+            -backend-config="region=${{ vars.TF_BACKEND_REGION || 'us-east-1' }}"
+      - name: Format check
+        run: terraform fmt -check -recursive
+      - name: Validate
+        run: terraform validate
+      - name: Plan
+        run: terraform plan -input=false -out=tfplan -no-color | tee plan.txt
+
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: iac/terraform/tfplan
+          retention-days: 5
+
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('iac/terraform/plan.txt', 'utf8');
+            if (plan.length > 60000) plan = plan.slice(-60000);
+            const body = `### Terraform plan\n\`\`\`\n${plan}\n\`\`\``;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, body });
+
+  # --------------------------------------------------------------- APPLY -----
+  apply:
+    needs: plan
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+    runs-on: ubuntu-latest
+    environment: production       # add required reviewers here for an approval gate
+    defaults:
+      run:
+        working-directory: iac/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.4"
+      - name: Pull cloud identifiers from Vault (OIDC)
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ vars.VAULT_ADDR }}
+          namespace: ${{ vars.VAULT_NAMESPACE || 'admin' }}
+          method: jwt
+          role: github-actions
+          jwtGithubAudience: https://github.com/${{ github.repository_owner }}
+          exportToken: false
+          secrets: |
+            secret/data/cluster-infra-mini/cloud AWS_ROLE_ARN | AWS_ROLE_ARN ;
+            secret/data/cluster-infra-mini/cloud GCP_WIF_PROVIDER | GCP_WIF_PROVIDER ;
+            secret/data/cluster-infra-mini/cloud GCP_SERVICE_ACCOUNT | GCP_SERVICE_ACCOUNT ;
+            secret/data/cluster-infra-mini/cloud GCP_PROJECT | TF_VAR_gcp_project ;
+            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | AZURE_CLIENT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | ARM_CLIENT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | AZURE_TENANT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | ARM_TENANT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | AZURE_SUBSCRIPTION_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | ARM_SUBSCRIPTION_ID
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=cluster-infra-mini/terraform.tfstate" \
+            -backend-config="region=${{ vars.TF_BACKEND_REGION || 'us-east-1' }}"
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: iac/terraform
+      - name: Apply
+        run: terraform apply -input=false -auto-approve tfplan
+
+  # ------------------------------------------------------------- DESTROY -----
+  destroy:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: iac/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.4"
+      - name: Pull cloud identifiers from Vault (OIDC)
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ vars.VAULT_ADDR }}
+          namespace: ${{ vars.VAULT_NAMESPACE || 'admin' }}
+          method: jwt
+          role: github-actions
+          jwtGithubAudience: https://github.com/${{ github.repository_owner }}
+          exportToken: false
+          secrets: |
+            secret/data/cluster-infra-mini/cloud AWS_ROLE_ARN | AWS_ROLE_ARN ;
+            secret/data/cluster-infra-mini/cloud GCP_WIF_PROVIDER | GCP_WIF_PROVIDER ;
+            secret/data/cluster-infra-mini/cloud GCP_SERVICE_ACCOUNT | GCP_SERVICE_ACCOUNT ;
+            secret/data/cluster-infra-mini/cloud GCP_PROJECT | TF_VAR_gcp_project ;
+            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | AZURE_CLIENT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | ARM_CLIENT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | AZURE_TENANT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | ARM_TENANT_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | AZURE_SUBSCRIPTION_ID ;
+            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | ARM_SUBSCRIPTION_ID
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=cluster-infra-mini/terraform.tfstate" \
+            -backend-config="region=${{ vars.TF_BACKEND_REGION || 'us-east-1' }}"
+      - name: Destroy
+        run: terraform destroy -input=false -auto-approve

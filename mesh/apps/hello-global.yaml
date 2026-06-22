@@ -1,0 +1,49 @@
+# A sample ACTIVE-ACTIVE global service. Apply this SAME file to all 3 clusters
+# (set CLOUD per cluster so you can see which cloud served a request). Because
+# every cluster runs `hello` and the mesh shares endpoints, a call to
+# hello.demo.svc.cluster.local is load-balanced across pods in ALL three clouds.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+  labels:
+    istio-injection: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  namespace: demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: hello }
+  template:
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+        - name: hello
+          image: hashicorp/http-echo:1.0
+          args: ["-text=hello from $(CLOUD)", "-listen=:5678"]
+          env:
+            - name: CLOUD
+              value: "REPLACE_ME"   # set to aws | gcp | azure per cluster
+          ports:
+            - containerPort: 5678
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
+  namespace: demo
+  labels:
+    app: hello
+spec:
+  selector:
+    app: hello
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5678

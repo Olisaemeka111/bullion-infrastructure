@@ -1,0 +1,45 @@
+# Global observability: one Prometheus per cluster scrapes local node-exporter +
+# Istio + kube metrics; a central Prometheus then /federate's all three into a
+# single fleet-wide view (the multi-cloud version of the project's single
+# Prometheus exposition). Drop this ConfigMap into the CENTRAL Prometheus.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-federation
+  namespace: observability
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 30s
+      external_labels:
+        role: global-federator
+    scrape_configs:
+      # Federate each cloud's Prometheus. Replace the targets with the per-cluster
+      # Prometheus endpoints (e.g. exposed via the Istio east-west gateway/mTLS).
+      - job_name: federate-aws
+        honor_labels: true
+        metrics_path: /federate
+        params:
+          match[]:
+            - '{job=~"node-exporter|istio.*|kube.*"}'
+        static_configs:
+          - targets: ['prometheus.observability.svc.aws:9090']
+            labels: { cloud: aws }
+      - job_name: federate-gcp
+        honor_labels: true
+        metrics_path: /federate
+        params:
+          match[]:
+            - '{job=~"node-exporter|istio.*|kube.*"}'
+        static_configs:
+          - targets: ['prometheus.observability.svc.gcp:9090']
+            labels: { cloud: gcp }
+      - job_name: federate-azure
+        honor_labels: true
+        metrics_path: /federate
+        params:
+          match[]:
+            - '{job=~"node-exporter|istio.*|kube.*"}'
+        static_configs:
+          - targets: ['prometheus.observability.svc.azure:9090']
+            labels: { cloud: azure }

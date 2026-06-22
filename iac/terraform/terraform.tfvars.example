@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars and edit. Each cloud can be toggled independently so
+# you can start with one (cheapest path) and add the others later.
+
+name_prefix        = "fleet-mini"
+node_count         = 2        # the "2 medium nodes per cloud" requirement
+kubernetes_version = "1.29"
+
+# ---- AWS (EKS) ----
+enable_aws             = true
+aws_region             = "us-east-1"
+aws_node_instance_type = "t3.medium"
+
+# ---- GCP (GKE Autopilot) ----  (gcp_project is REQUIRED when enable_gcp = true)
+# Autopilot manages nodes automatically — no node count / machine type here.
+enable_gcp  = true
+gcp_project = "my-gcp-project-id"
+gcp_region  = "us-central1"
+
+# ---- Azure (AKS) ----
+enable_azure       = true
+azure_location     = "eastus"
+azure_node_vm_size = "Standard_D2s_v3"

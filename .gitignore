@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Test / coverage artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Runtime state written by the CLI / store
+clusterctl-state.json
+*.tmp
+*.json.*.tmp
+
+# Terraform — never commit state or local provider/module caches
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars            # may contain project ids / regions; commit the .example instead
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+
+# Local environments / editor / OS
+.venv/
+venv/
+.env
+.vscode/
+.idea/
+.DS_Store

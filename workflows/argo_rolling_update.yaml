@@ -1,0 +1,70 @@
+# Argo Workflows — fleet-wide rolling update DAG.
+# Runs as a CronWorkflow or on-demand. Each pool is updated in parallel, but
+# within a pool the update respects max_unavailable (enforced by the control
+# plane). The workflow is the orchestration layer; the actual node replacement is
+# performed by the idempotent control-plane API it calls.
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: fleet-rolling-update-
+  labels: { app: cluster-infra, op: rolling-update }
+spec:
+  entrypoint: rolling-update
+  arguments:
+    parameters:
+      - name: cluster
+        value: fleet-prod
+      - name: new-image
+        value: "sha256:GOLD-v2"
+  templates:
+    - name: rolling-update
+      dag:
+        tasks:
+          - name: preflight-image-provenance
+            template: verify-image
+          - name: update-aws
+            dependencies: [preflight-image-provenance]
+            template: update-pool
+            arguments: { parameters: [{ name: pool, value: gpu-aws }] }
+          - name: update-gcp
+            dependencies: [preflight-image-provenance]
+            template: update-pool
+            arguments: { parameters: [{ name: pool, value: gpu-gcp }] }
+          - name: update-azure
+            dependencies: [preflight-image-provenance]
+            template: update-pool
+            arguments: { parameters: [{ name: pool, value: gpu-azure }] }
+          - name: update-onprem
+            dependencies: [preflight-image-provenance]
+            template: update-pool
+            arguments: { parameters: [{ name: pool, value: metal-onprem }] }
+          - name: verify-fleet-healthy
+            dependencies: [update-aws, update-gcp, update-azure, update-onprem]
+            template: verify-health
+
+    - name: verify-image
+      container:
+        image: registry.internal/clusterctl:latest
+        command: ["clusterctl", "verify-image", "--image", "{{workflow.parameters.new-image}}"]
+
+    - name: update-pool
+      inputs:
+        parameters: [{ name: pool }]
+      # retries make the step durable; the control-plane call is idempotent
+      retryStrategy: { limit: "20", retryPolicy: OnError }
+      container:
+        image: registry.internal/clusterctl:latest
+        command:
+          - clusterctl
+          - update
+          - --cluster
+          - "{{workflow.parameters.cluster}}"
+          - --pool
+          - "{{inputs.parameters.pool}}"
+          - --image
+          - "{{workflow.parameters.new-image}}"
+
+    - name: verify-health
+      container:
+        image: registry.internal/clusterctl:latest
+        command: ["clusterctl", "status", "--cluster", "{{workflow.parameters.cluster}}"]

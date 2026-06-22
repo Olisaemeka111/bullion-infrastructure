@@ -1,0 +1,22 @@
+# Atlantis — PR-driven Terraform for the mini multi-cloud managed fleet.
+# Workflow: open a PR -> Atlantis runs `plan` and comments the diff -> a reviewer
+# approves -> `atlantis apply` provisions EKS/GKE/AKS. Same GitOps model as the
+# reference project, scaled to the 2-node-per-cloud test fleet.
+version: 3
+automerge: false
+parallel_plan: true
+parallel_apply: false
+
+projects:
+  - name: fleet-mini
+    dir: iac/terraform
+    terraform_version: v1.11.4
+    autoplan:
+      when_modified:
+        - "*.tf"
+        - "modules/**/*.tf"
+        - "terraform.tfvars"
+      enabled: true
+    apply_requirements:
+      - approved
+      - mergeable

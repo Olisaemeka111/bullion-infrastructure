@@ -1,0 +1,20 @@
+# Exposes every mesh service through the east-west gateway so the OTHER clusters
+# can reach it over mTLS (AUTO_PASSTHROUGH lets the receiving istiod terminate).
+# Apply to istio-system in ALL three clusters.
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: cross-network-gateway
+  namespace: istio-system
+spec:
+  selector:
+    istio: eastwestgateway
+  servers:
+    - port:
+        number: 15443
+        name: tls
+        protocol: TLS
+      tls:
+        mode: AUTO_PASSTHROUGH
+      hosts:
+        - "*.local"

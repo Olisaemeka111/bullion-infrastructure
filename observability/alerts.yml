@@ -1,0 +1,56 @@
+# Prometheus alerting rules for the cluster control plane.
+# Loaded by Prometheus / Alertmanager. Severities map to the RUNBOOK on-call
+# signal table. SLO-based alerts page on burn rate, not on single-node noise.
+groups:
+  - name: clusterinfra.slo
+    rules:
+      # SLO: pool availability (healthy/desired) >= 99% over a rolling window.
+      - alert: PoolAvailabilityBelowSLO
+        expr: clusterinfra_pool_availability_ratio < 0.99
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "Pool {{ $labels.cluster }}/{{ $labels.pool }} below 99% availability"
+          description: "healthy/desired = {{ $value }} on {{ $labels.provider }}."
+
+      - alert: PoolCriticallyDegraded
+        expr: clusterinfra_pool_availability_ratio < 0.80
+        for: 2m
+        labels: { severity: critical, page: "true" }
+        annotations:
+          summary: "Pool {{ $labels.cluster }}/{{ $labels.pool }} critically degraded"
+
+  - name: clusterinfra.health
+    rules:
+      - alert: HighNodeFailureRate
+        expr: sum(rate(clusterinfra_nodes_failed_total[5m])) by (provider) > 0.5
+        for: 5m
+        labels: { severity: high }
+        annotations:
+          summary: "Elevated node failure rate on {{ $labels.provider }}"
+
+      - alert: SecurityGateRejections
+        expr: increase(clusterinfra_security_gate_rejections_total[10m]) > 0
+        for: 0m
+        labels: { severity: high, page: "true" }
+        annotations:
+          summary: "Secure-by-default gate rejecting nodes ({{ $labels.provider }})"
+          description: "Image provenance / attestation / hardening failing. Do NOT bypass."
+
+      - alert: SelfHealStorm
+        expr: sum(rate(clusterinfra_self_heal_total[5m])) > 5
+        for: 5m
+        labels: { severity: critical, page: "true" }
+        annotations:
+          summary: "Self-heal replacements spiking - suspect correlated failure"
+          description: "Replacement budget is protecting you; investigate before raising it."
+
+  - name: clusterinfra.controlplane
+    rules:
+      # The reconciler should always be ticking; flat counter = stuck control plane.
+      - alert: ReconcilerStalled
+        expr: increase(clusterinfra_reconcile_ticks_total[5m]) == 0
+        for: 5m
+        labels: { severity: critical, page: "true" }
+        annotations:
+          summary: "Reconciler has not ticked in 5m - control plane stalled"

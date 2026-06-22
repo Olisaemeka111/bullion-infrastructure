@@ -1,0 +1,58 @@
+# Per-NODE observability: a node-exporter DaemonSet schedules one pod on EVERY
+# node in the cluster, exporting host metrics (CPU/mem/disk/net) on :9100. This is
+# how "observability is incorporated in all the nodes" — combined with the Python
+# control-plane telemetry (observability/telemetry.py) and Istio's per-pod golden
+# signals, every node and every hop is observable.
+#
+# Apply to EKS and AKS (self-managed nodes allow hostNetwork/hostPath DaemonSets).
+# GKE AUTOPILOT: privileged host-level DaemonSets are restricted — there, node
+# metrics come from Google Managed Service for Prometheus / Cloud Monitoring
+# (enabled by default on Autopilot). See observability/README-autopilot note.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  namespace: observability
+  labels:
+    app: node-exporter
+spec:
+  selector:
+    matchLabels: { app: node-exporter }
+  template:
+    metadata:
+      labels: { app: node-exporter }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      hostNetwork: true
+      hostPID: true
+      tolerations:
+        - operator: Exists      # run on every node, incl. tainted/control nodes
+      containers:
+        - name: node-exporter
+          image: quay.io/prometheus/node-exporter:v1.8.1
+          args:
+            - --path.rootfs=/host/root
+            - --collector.cpu
+            - --collector.meminfo
+            - --collector.filesystem
+            - --collector.netdev
+          ports:
+            - containerPort: 9100
+              name: metrics
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - name: rootfs
+              mountPath: /host/root
+              readOnly: true
+      volumes:
+        - name: rootfs
+          hostPath: { path: / }

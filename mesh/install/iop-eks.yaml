@@ -1,0 +1,32 @@
+# Istio multi-primary control plane for the EKS cluster (network: aws).
+# Each cluster runs its own istiod (multi-primary) and an east-west gateway so
+# services can be reached across clouds over mTLS. meshID + trust domain are
+# shared so all three clusters form ONE mesh.
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: istio-eks
+spec:
+  profile: default
+  values:
+    global:
+      meshID: mesh-fleet
+      multiCluster:
+        clusterName: eks
+      network: network-aws
+  components:
+    ingressGateways:
+      - name: istio-eastwestgateway
+        label:
+          istio: eastwestgateway
+          app: istio-eastwestgateway
+          topology.istio.io/network: network-aws
+        enabled: true
+        k8s:
+          service:
+            type: LoadBalancer
+            ports:
+              - { name: status-port, port: 15021, targetPort: 15021 }
+              - { name: tls, port: 15443, targetPort: 15443 }
+              - { name: tls-istiod, port: 15012, targetPort: 15012 }
+              - { name: tls-webhook, port: 15017, targetPort: 15017 }

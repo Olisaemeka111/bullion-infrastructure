@@ -1,0 +1,77 @@
+# Makes the global `hello` service ACTIVE-ACTIVE with automatic failover:
+#  * localityLbSetting.failover + distribute: traffic prefers the local cloud but
+#    spreads across all healthy clouds; if the local region's endpoints fail,
+#    outlierDetection ejects them and traffic shifts to the other clouds.
+#  * This is the data-plane equivalent of the GlobalTrafficDirector model in
+#    networking/global_lb.py (and what sim/active_active.py demonstrates).
+# Apply to the `demo` namespace in ALL three clusters.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: hello-failover
+  namespace: demo
+spec:
+  host: hello.demo.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 1000
+    loadBalancer:
+      simple: LEAST_REQUEST
+      localityLbSetting:
+        enabled: true
+        # spread evenly across clouds (active-active); change to taste
+        distribute:
+          - from: "network-aws/*"
+            to:
+              "network-aws/*": 34
+              "network-gcp/*": 33
+              "network-azure/*": 33
+        failover:
+          - from: aws
+            to: gcp
+          - from: gcp
+            to: azure
+          - from: azure
+            to: aws
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 5s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 100   # a fully-failed cloud is 100% ejected -> drains
+---
+# North-south ingress: users hit any cluster's ingress gateway; the same global
+# routing applies, so a regional GSLB/DNS (iac/terraform/modules/global_dns) can
+# point at all three ingresses active-active.
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: hello-ingress
+  namespace: demo
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: hello
+  namespace: demo
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - hello-ingress
+  http:
+    - route:
+        - destination:
+            host: hello.demo.svc.cluster.local
+            port:
+              number: 80
