@@ -86,7 +86,10 @@ jobs:
       - name: Validate
         run: terraform validate
       - name: Plan
-        run: terraform plan -input=false -out=tfplan -no-color | tee plan.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          terraform plan -input=false -out=tfplan -no-color | tee plan.txt
 
       - name: Upload plan
         uses: actions/upload-artifact@v4

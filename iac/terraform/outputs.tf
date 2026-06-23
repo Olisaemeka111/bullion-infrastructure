@@ -26,11 +26,12 @@ output "gke" {
   sensitive = true
 }
 
-output "aks" {
-  description = "AKS cluster details + kubeconfig command."
-  value = var.enable_azure ? {
-    cluster_name        = module.aks[0].cluster_name
-    resource_group_name = module.aks[0].resource_group_name
-    kubeconfig          = "az aks get-credentials --resource-group ${module.aks[0].resource_group_name} --name ${module.aks[0].cluster_name}"
-  } : null
-}
+# Re-enable with the aks module (main.tf) when Azure is added.
+# output "aks" {
+#   description = "AKS cluster details + kubeconfig command."
+#   value = var.enable_azure ? {
+#     cluster_name        = module.aks[0].cluster_name
+#     resource_group_name = module.aks[0].resource_group_name
+#     kubeconfig          = "az aks get-credentials --resource-group ${module.aks[0].resource_group_name} --name ${module.aks[0].cluster_name}"
+#   } : null
+# }

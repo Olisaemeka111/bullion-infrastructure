@@ -14,9 +14,13 @@ provider "google" {
   region  = var.gcp_region
 }
 
-provider "azurerm" {
-  features {}
-}
+# Azure disabled until a subscription exists. The azurerm provider authenticates
+# at plan time even when its module is count=0, so it must stay commented out
+# (not just toggled off) to avoid breaking AWS+GCP. Re-enable with the aks module
+# below + the AZURE_* GitHub secrets.
+# provider "azurerm" {
+#   features {}
+# }
 
 # ---- AWS : Amazon EKS -------------------------------------------------------
 module "eks" {
@@ -43,14 +47,16 @@ module "gke" {
 }
 
 # ---- Azure : Azure AKS ------------------------------------------------------
-module "aks" {
-  source = "./modules/aks"
-  count  = var.enable_azure ? 1 : 0
-
-  cluster_name       = "${var.name_prefix}-aks"
-  location           = var.azure_location
-  kubernetes_version = var.kubernetes_version
-  node_count         = var.node_count
-  node_vm_size       = var.azure_node_vm_size
-  tags               = var.tags
-}
+# Re-enable together with the azurerm provider above once you have an Azure
+# subscription + the AZURE_* GitHub secrets, then set ENABLE_AZURE=true.
+# module "aks" {
+#   source = "./modules/aks"
+#   count  = var.enable_azure ? 1 : 0
+#
+#   cluster_name       = "${var.name_prefix}-aks"
+#   location           = var.azure_location
+#   kubernetes_version = var.kubernetes_version
+#   node_count         = var.node_count
+#   node_vm_size       = var.azure_node_vm_size
+#   tags               = var.tags
+# }
