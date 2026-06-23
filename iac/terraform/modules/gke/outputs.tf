@@ -14,3 +14,15 @@ output "network" {
 output "network_id" {
   value = google_compute_network.vpc.id
 }
+
+output "subnet_cidr" {
+  value = var.subnet_cidr
+}
+
+output "pods_cidr" {
+  value = var.pods_cidr
+}
+
+output "services_cidr" {
+  value = var.services_cidr
+}

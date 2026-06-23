@@ -35,6 +35,7 @@ env:
   TF_VAR_enable_aws: ${{ vars.ENABLE_AWS || 'true' }}
   TF_VAR_enable_gcp: ${{ vars.ENABLE_GCP || 'true' }}
   TF_VAR_enable_azure: ${{ vars.ENABLE_AZURE || 'false' }}
+  TF_VAR_enable_cross_cloud: ${{ vars.ENABLE_CROSS_CLOUD || 'false' }}
   # Azure (only used when ENABLE_AZURE=true; empty/ignored otherwise)
   ARM_USE_OIDC: "true"
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}

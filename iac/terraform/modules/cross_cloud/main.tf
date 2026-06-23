@@ -28,8 +28,48 @@ resource "google_compute_router" "gcp" {
   region  = var.gcp_region
   network = var.gcp_network
   bgp {
-    asn = var.gcp_router_asn
+    asn            = var.gcp_router_asn
+    advertise_mode = "CUSTOM"
+    # advertise the GKE subnet + pod + service ranges to AWS so EKS can route to
+    # GKE pods (CockroachDB node-to-node). AWS advertises its VPC CIDR by default.
+    advertised_ip_ranges {
+      range = var.gke_subnet_cidr
+    }
+    advertised_ip_ranges {
+      range = var.gke_pods_cidr
+    }
+    advertised_ip_ranges {
+      range = var.gke_services_cidr
+    }
   }
+}
+
+# Allow EKS (AWS VPC CIDR) into the GKE network over the VPN.
+resource "google_compute_firewall" "from_aws" {
+  name          = "${var.name_prefix}-allow-aws"
+  network       = var.gcp_network
+  direction     = "INGRESS"
+  source_ranges = [var.aws_vpc_cidr]
+  allow {
+    protocol = "tcp"
+  }
+  allow {
+    protocol = "udp"
+  }
+  allow {
+    protocol = "icmp"
+  }
+}
+
+# Allow GKE (subnet + pods) into the EKS nodes over the VPN.
+resource "aws_security_group_rule" "from_gke" {
+  type              = "ingress"
+  security_group_id = var.eks_node_security_group_id
+  protocol          = "tcp"
+  from_port         = 0
+  to_port           = 65535
+  cidr_blocks       = [var.gke_subnet_cidr, var.gke_pods_cidr]
+  description       = "Cross-cloud: GKE pods/nodes -> EKS nodes (CockroachDB :26257 etc.)"
 }
 
 # ---- AWS: VPN gateway attached to the EKS VPC ----

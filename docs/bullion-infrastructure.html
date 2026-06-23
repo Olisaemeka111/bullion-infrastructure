@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bullion Infrastructure — Project & Infrastructure Report</title>
+<style>
+  :root{
+    --aws:#ea580c; --gcp:#2563eb; --mesh:#7c3aed; --cicd:#16a34a; --obs:#0891b2;
+    --pending:#a16207; --ops:#be185d; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+  }
+  *{ box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  html,body{ margin:0; padding:0; color:var(--ink); background:#fff;
+    font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-size:10.5px; line-height:1.5; }
+  @page{ size:A4; margin:14mm 13mm 15mm;
+    @bottom-center{ content:"Bullion Infrastructure — active-active multi-cloud Kubernetes"; font-size:8px; color:#94a3b8; }
+    @bottom-right{ content:"Page " counter(page) " / " counter(pages); font-size:8px; color:#94a3b8; } }
+  h2{ font-size:18px; margin:0 0 .4em; } h3{ font-size:13px; margin:14px 0 .4em; } h4{ font-size:11.5px; margin:0 0 5px; }
+  p{ margin:0 0 .6em; } code{ font-family:"Cascadia Code",Consolas,monospace; font-size:9.5px; background:#f1f5f9; padding:1px 4px; border-radius:3px; }
+  .page-break{ page-break-before:always; } .avoid{ break-inside:avoid; }
+  ul{ margin:0 0 .6em; padding-left:18px; } li{ margin:2px 0; }
+
+  .cover{ height:256mm; display:flex; flex-direction:column; justify-content:center; padding:0 8mm;
+    background:linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#3730a3 100%); color:#fff; border-radius:6px; }
+  .cover .kick{ letter-spacing:.32em; text-transform:uppercase; font-size:12px; color:#93c5fd; margin-bottom:14px; }
+  .cover h1{ font-size:50px; line-height:1.03; margin:0 0 12px; }
+  .cover .sub{ font-size:15px; color:#cbd5e1; max-width:160mm; }
+  .cover .chips{ margin-top:24px; display:flex; flex-wrap:wrap; gap:8px; }
+  .cover .chip{ background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.22); padding:6px 12px; border-radius:20px; font-size:10.5px; color:#e2e8f0; }
+  .cover .status{ margin-top:22px; display:inline-block; background:#064e3b; color:#6ee7b7; border:1px solid #10b981; padding:8px 15px; border-radius:6px; font-weight:600; font-size:12px; }
+  .cover .meta{ margin-top:26px; font-size:10.5px; color:#94a3b8; }
+
+  .sec-head{ display:flex; align-items:center; gap:10px; border-bottom:3px solid var(--line); padding-bottom:6px; margin:0 0 12px; }
+  .sec-num{ color:#fff; font-weight:700; border-radius:6px; padding:4px 11px; font-size:13px; }
+  .lead{ font-size:11px; color:#334155; background:#f8fafc; border-left:4px solid var(--mesh); padding:9px 13px; border-radius:0 6px 6px 0; margin-bottom:13px; }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .card{ border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .card h4{ display:flex; align-items:center; gap:6px; }
+  .tag{ display:inline-block; font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#fff; padding:2px 8px; border-radius:10px; }
+  .card.aws{border-top:4px solid var(--aws)} .card.gcp{border-top:4px solid var(--gcp)}
+  .card.mesh{border-top:4px solid var(--mesh)} .card.cicd{border-top:4px solid var(--cicd)}
+  .card.obs{border-top:4px solid var(--obs)} .card.pending{border-top:4px solid var(--pending)}
+  table{ width:100%; border-collapse:collapse; font-size:9.5px; margin-bottom:12px; }
+  th,td{ text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th{ background:#f1f5f9; font-size:8.5px; text-transform:uppercase; letter-spacing:.05em; color:#475569; }
+  tr:nth-child(even) td{ background:#fafbfc; }
+  .ok{ color:#15803d; font-weight:700; } .wait{ color:#b45309; font-weight:700; }
+  .callout{ border-radius:8px; padding:11px 14px; margin:12px 0; }
+  .callout.win{ background:#f0fdf4; border:1px solid #86efac; }
+  .callout.note{ background:#fffbeb; border:1px solid #fde68a; }
+  pre{ background:#0f172a; color:#e2e8f0; padding:11px 13px; border-radius:8px; font-family:"Cascadia Code",Consolas,monospace; font-size:9px; line-height:1.5; white-space:pre-wrap; }
+  pre .g{color:#86efac} pre .m{color:#94a3b8} pre .y{color:#fde68a}
+  .legend{ display:flex; flex-wrap:wrap; gap:7px; margin:8px 0 0; }
+  .legend span{ font-size:9px; padding:3px 9px; border-radius:12px; color:#fff; font-weight:600; }
+  svg{ width:100%; height:auto; }
+  .foot{ color:var(--muted); font-size:8.5px; margin-top:6px; }
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<section class="cover">
+  <div class="kick">Project &amp; Infrastructure Report</div>
+  <h1>Bullion Infrastructure</h1>
+  <div class="sub">A real, CI/CD-deployed multi-cloud Kubernetes platform running
+    AWS&nbsp;EKS and GCP&nbsp;GKE as <b>one active-active cluster</b> — joined by an
+    Istio service mesh, with live traffic load-balanced across both clouds.</div>
+  <div class="chips">
+    <span class="chip">EKS + GKE</span>
+    <span class="chip">Istio multi-primary</span>
+    <span class="chip">Active-active LB</span>
+    <span class="chip">GitHub Actions + OIDC</span>
+    <span class="chip">Terraform IaC</span>
+  </div>
+  <div class="status">✓ Active-active cross-cloud mesh LIVE &amp; verified — traffic balances EKS ⇄ GKE (12 AWS / 8 GCP)</div>
+  <div class="meta">Repo: Olisaemeka111/bullion-infrastructure &nbsp;·&nbsp; AWS acct 730767193290 &nbsp;·&nbsp; GCP project-f38bfcd6 &nbsp;·&nbsp; Report 2026-06-23</div>
+  <div class="legend">
+    <span style="background:var(--aws)">AWS / EKS</span>
+    <span style="background:var(--gcp)">GCP / GKE</span>
+    <span style="background:var(--mesh)">Service mesh</span>
+    <span style="background:var(--cicd)">CI/CD</span>
+    <span style="background:var(--obs)">Observability</span>
+    <span style="background:var(--pending)">Pending</span>
+  </div>
+</section>
+
+<!-- 1. GOAL + ARCH -->
+<section class="page-break">
+  <div class="sec-head"><span class="sec-num" style="background:var(--mesh)">1</span><h2>Goal &amp; architecture</h2></div>
+  <div class="lead">Run clusters in more than one cloud and have them behave as <b>one
+    active-active platform</b> — not primary + cold backup. A workload deployed to both
+    clouds is one global service; requests load-balance across both at once; if a cloud
+    fails, traffic auto-redistributes to the survivor. All infrastructure-as-code + CI/CD,
+    keyless auth, gated approvals.</div>
+
+  <div class="avoid">
+  <svg viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial">
+    <defs><marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#7c3aed"/></marker></defs>
+    <rect x="300" y="8" width="300" height="40" rx="8" fill="#ede9fe" stroke="#7c3aed"/>
+    <text x="450" y="26" text-anchor="middle" font-size="12" font-weight="700" fill="#5b21b6">One Istio mesh (mesh-fleet)</text>
+    <text x="450" y="41" text-anchor="middle" font-size="10" fill="#7c3aed">global Service hello.demo.svc · DestinationRule 50/50 across regions</text>
+    <!-- EKS -->
+    <rect x="40" y="90" width="350" height="210" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+    <text x="215" y="112" text-anchor="middle" font-size="13" font-weight="700" fill="#9a3412">AWS — EKS (bullion-eks)</text>
+    <text x="215" y="129" text-anchor="middle" font-size="9.5" fill="#9a3412">us-east-1 · 2× m5.xlarge · k8s 1.32 · network-aws</text>
+    <rect x="62" y="142" width="306" height="30" rx="6" fill="#fff" stroke="#fdba74"/><text x="215" y="161" text-anchor="middle" font-size="9.5" fill="#9a3412">istiod (primary) + shared CA</text>
+    <rect x="62" y="178" width="306" height="30" rx="6" fill="#fff" stroke="#fdba74"/><text x="215" y="197" text-anchor="middle" font-size="9.5" fill="#9a3412">east-west gateway (ELB)</text>
+    <rect x="62" y="214" width="306" height="30" rx="6" fill="#fff" stroke="#fdba74"/><text x="215" y="233" text-anchor="middle" font-size="9.5" fill="#9a3412">hello ×2 + sidecars · kube-prometheus-stack</text>
+    <rect x="62" y="250" width="306" height="30" rx="6" fill="#fff" stroke="#fdba74"/><text x="215" y="269" text-anchor="middle" font-size="9.5" fill="#9a3412">VPC · 2 AZ · private subnets + NAT</text>
+    <!-- GKE -->
+    <rect x="510" y="90" width="350" height="210" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+    <text x="685" y="112" text-anchor="middle" font-size="13" font-weight="700" fill="#1e40af">GCP — GKE (bullion-gke)</text>
+    <text x="685" y="129" text-anchor="middle" font-size="9.5" fill="#1e40af">us-central1-a · 2× e2-standard-4 · network-gcp</text>
+    <rect x="532" y="142" width="306" height="30" rx="6" fill="#fff" stroke="#93c5fd"/><text x="685" y="161" text-anchor="middle" font-size="9.5" fill="#1e40af">istiod (primary) + shared CA</text>
+    <rect x="532" y="178" width="306" height="30" rx="6" fill="#fff" stroke="#93c5fd"/><text x="685" y="197" text-anchor="middle" font-size="9.5" fill="#1e40af">east-west gateway (136.116.250.171)</text>
+    <rect x="532" y="214" width="306" height="30" rx="6" fill="#fff" stroke="#93c5fd"/><text x="685" y="233" text-anchor="middle" font-size="9.5" fill="#1e40af">hello ×2 + sidecars · Standard, WI</text>
+    <rect x="532" y="250" width="306" height="30" rx="6" fill="#fff" stroke="#93c5fd"/><text x="685" y="269" text-anchor="middle" font-size="9.5" fill="#1e40af">private nodes (no public IP) + Cloud NAT</text>
+    <!-- mesh link -->
+    <path d="M390,197 L510,197" stroke="#7c3aed" stroke-width="2.5" marker-end="url(#a)" fill="none"/>
+    <path d="M510,205 L390,205" stroke="#7c3aed" stroke-width="2.5" marker-end="url(#a)" fill="none"/>
+    <text x="450" y="190" text-anchor="middle" font-size="9" font-weight="700" fill="#5b21b6">mTLS · BGP</text>
+    <text x="450" y="224" text-anchor="middle" font-size="9" font-weight="700" fill="#5b21b6">remote-secret join</text>
+    <text x="450" y="330" text-anchor="middle" font-size="10.5" font-weight="700" fill="#334155">active-active load balancing across both clouds</text>
+  </svg>
+  </div>
+</section>
+
+<!-- 2. CLOUD INVENTORY -->
+<section>
+  <div class="sec-head"><span class="sec-num" style="background:var(--aws)">2</span><h2>Cloud inventory (final state)</h2></div>
+  <div class="grid2">
+    <div class="card aws avoid">
+      <h4><span class="tag" style="background:var(--aws)">AWS · us-east-1</span> EKS — bullion-eks</h4>
+      <table>
+        <tr><td>Cluster</td><td>EKS, Kubernetes <b>1.32</b></td></tr>
+        <tr><td>Nodes</td><td>2 × <b>m5.xlarge</b> (4 vCPU/16GB)</td></tr>
+        <tr><td>Network</td><td>VPC, 2 AZ, private subnets + 1 NAT, public subnets</td></tr>
+        <tr><td>Access</td><td>EKS access entries (CI role + Olisa = admin); node SG open for istiod 15017/15012</td></tr>
+        <tr><td>State</td><td>S3 <code>fleet-mini-tfstate-59998ac4</code>, native locking</td></tr>
+      </table>
+    </div>
+    <div class="card gcp avoid">
+      <h4><span class="tag" style="background:var(--gcp)">GCP · us-central1-a</span> GKE — bullion-gke</h4>
+      <table>
+        <tr><td>Cluster</td><td>GKE <b>Standard</b> (zonal), Workload Identity</td></tr>
+        <tr><td>Nodes</td><td>2 × <b>e2-standard-4</b> (4 vCPU/16GB)</td></tr>
+        <tr><td>Network</td><td>VPC-native; <b>private nodes</b> + Cloud NAT egress</td></tr>
+        <tr><td>Why private</td><td>free-trial IP quota (4) — keeps node IPs off the count for the mesh LBs</td></tr>
+        <tr><td>Project</td><td><code>project-f38bfcd6-70ff-4a8d-9cd</code></td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="callout note"><b>Azure</b> — disabled. The account has no subscription
+  (<code>NoAzurePlanFound</code>); the azurerm provider + AKS module are commented out
+  until one exists. Re-enabling is a documented toggle, no redesign.</div>
+</section>
+
+<!-- 3. CI/CD -->
+<section class="page-break">
+  <div class="sec-head"><span class="sec-num" style="background:var(--cicd)">3</span><h2>CI/CD &amp; security</h2></div>
+  <div class="lead">All deploys run through <b>GitHub Actions</b> with <b>keyless OIDC</b>
+  auth and a gated <code>production</code> environment (required reviewer). No static
+  cloud keys.</div>
+  <table>
+    <tr><th>Workflow</th><th>Purpose</th><th>Trigger</th></tr>
+    <tr><td><code>ci.yml</code></td><td>80 stdlib tests + <code>terraform fmt/validate</code> (no creds)</td><td>every push / PR</td></tr>
+    <tr><td><code>deploy.yml</code></td><td>Terraform: EKS, GKE, cross-cloud VPN — plan → gated apply → destroy</td><td>PR / push / dispatch</td></tr>
+    <tr><td><code>platform.yml</code></td><td>Istio multi-primary join + global app + observability</td><td>dispatch / mesh changes</td></tr>
+  </table>
+  <div class="grid2">
+    <div class="card cicd"><h4>Keyless cloud auth</h4>
+      <p><b>AWS:</b> GitHub OIDC → IAM role <code>fleet-mini-gha</code>. <b>GCP:</b> OIDC →
+      Workload Identity Federation → SA <code>fleet-mini-gha</code>. No long-lived keys.</p></div>
+    <div class="card cicd"><h4>State &amp; secrets</h4>
+      <p>S3 <b>native state locking</b> (no DynamoDB). Deploy identifiers in GitHub vars/secrets
+      (OIDC identifiers, not credentials). HCP Vault Secrets reached EOL → <code>iac/vault/</code>
+      kept for a future Vault Dedicated setup.</p></div>
+  </div>
+</section>
+
+<!-- 4. MESH -->
+<section>
+  <div class="sec-head"><span class="sec-num" style="background:var(--mesh)">4</span><h2>Service mesh — final state</h2></div>
+  <div class="lead">The two clusters form <b>one mesh</b> (<code>meshID = mesh-fleet</code>)
+  via Istio <b>multi-primary, multi-network</b>.</div>
+  <div class="grid2">
+    <div class="card mesh"><h4>How they're joined</h4>
+      <ul>
+        <li><b>Shared root CA</b> → workloads in EKS &amp; GKE trust each other's mTLS.</li>
+        <li><b>A primary istiod per cluster</b> — no control-plane SPOF.</li>
+        <li><b>East-west gateways</b> (LB) carry cross-cluster mTLS traffic.</li>
+        <li><b>Remote secrets</b> exchanged → each istiod discovers the other's endpoints.</li>
+        <li><b>Network labels</b> <code>topology.istio.io/network</code> (network-aws / network-gcp) — the key to cross-network discovery.</li>
+      </ul></div>
+    <div class="card mesh"><h4>Global service &amp; LB</h4>
+      <p><code>hello.demo.svc.cluster.local</code> runs in both clusters. A
+      <code>DestinationRule</code> sets an explicit <b>50/50 cross-region split</b> with
+      <code>outlierDetection</code> so a failed cloud is ejected and traffic redistributes
+      (active-active failover).</p>
+      <p>East-west gateways: EKS <code>…elb.amazonaws.com</code> · GKE <code>136.116.250.171</code>.</p></div>
+  </div>
+  <div class="callout win"><h4 style="color:#166534;margin:0 0 4px">✓ Verified active-active behaviour</h4>
+    From a client pod in <b>EKS</b>, 20 calls to the global service returned
+    <b>aws: 12 / gcp: 8</b> — traffic from one cloud is served by <b>both</b> clouds through
+    the joined mesh.
+    <pre style="margin-top:8px"><span class="m"># from an EKS pod</span>
+for i in $(seq 20); do curl -s hello.demo.svc.cluster.local; done
+<span class="g">hello from aws</span>  ×12
+<span class="g">hello from gcp</span>  ×8</pre>
+  </div>
+</section>
+
+<!-- 5. TASKS -->
+<section class="page-break">
+  <div class="sec-head"><span class="sec-num" style="background:var(--ink)">5</span><h2>Tasks completed</h2></div>
+  <table>
+    <tr><th>#</th><th>Task</th><th>Status</th></tr>
+    <tr><td>1</td><td>Tooling (gh, terraform, aws, gcloud, az, kubectl, istioctl, hcp)</td><td class="ok">✓</td></tr>
+    <tr><td>2</td><td>Cloud identities via OIDC (AWS role, GCP WIF)</td><td class="ok">✓</td></tr>
+    <tr><td>3</td><td>Remote state (S3 native locking)</td><td class="ok">✓</td></tr>
+    <tr><td>4</td><td>CI/CD pipelines + gated production env</td><td class="ok">✓</td></tr>
+    <tr><td>5</td><td>Provision EKS (VPC, node group)</td><td class="ok">✓</td></tr>
+    <tr><td>6</td><td>Provision GKE (Standard, private nodes)</td><td class="ok">✓</td></tr>
+    <tr><td>7</td><td>Local kubectl access to both clusters</td><td class="ok">✓</td></tr>
+    <tr><td>8</td><td>Istio multi-primary install on both</td><td class="ok">✓</td></tr>
+    <tr><td>9</td><td>Join clusters (CA + east-west + remote secrets + network labels)</td><td class="ok">✓</td></tr>
+    <tr><td>10</td><td>Global app + active-active 50/50 load balancing</td><td class="ok">✓ verified</td></tr>
+    <tr><td>11</td><td>Observability (Prometheus/Grafana on EKS)</td><td class="ok">✓</td></tr>
+    <tr><td>12</td><td>Cross-cloud VPN module (AWS↔GCP HA VPN + BGP)</td><td class="wait">built, gated off</td></tr>
+    <tr><td>13</td><td>CockroachDB central DB (multi-region over VPN)</td><td class="wait">manifests only</td></tr>
+    <tr><td>14</td><td>Control-plane container (agentic reconciler + dashboard)</td><td class="wait">pending</td></tr>
+    <tr><td>15</td><td>Global DNS (north-south LB)</td><td class="wait">module built</td></tr>
+  </table>
+  <h3>Notable blockers resolved</h3>
+  <table>
+    <tr><th>Symptom</th><th>Fix</th></tr>
+    <tr><td>EKS rejected K8s 1.29</td><td>bump to 1.32</td></tr>
+    <tr><td>GKE Autopilot can't host self-managed Istio / DaemonSets</td><td>switch to GKE Standard</td></tr>
+    <tr><td>Node pool rejected <code>GKE_METADATA</code></td><td>enable Workload Identity on cluster</td></tr>
+    <tr><td>istiod won't schedule on medium nodes</td><td>4 vCPU/16GB nodes (m5.xlarge / e2-standard-4)</td></tr>
+    <tr><td>GCP free-trial IP quota (4) exceeded</td><td>private nodes + Cloud NAT</td></tr>
+    <tr><td>Terraform state drift (partial applies)</td><td>fresh plan reconciled</td></tr>
+    <tr><td>EKS sidecar-injector webhook timeout</td><td>open node SG :15017 / :15012</td></tr>
+    <tr><td>DestinationRule distribute+failover rejected</td><td>distribute + outlierDetection</td></tr>
+    <tr><td>Cross-cluster traffic stayed local</td><td>add <code>topology.istio.io/network</code> namespace label</td></tr>
+  </table>
+</section>
+
+<!-- 6. STATUS + OPERATE -->
+<section>
+  <div class="sec-head"><span class="sec-num" style="background:var(--pending)">6</span><h2>Deployed vs pending · operate · costs</h2></div>
+  <div class="grid2">
+    <div class="card cicd"><h4>✓ Live now</h4>
+      <p>EKS + GKE; Istio multi-primary mesh (joined); global app with active-active
+      cross-cloud LB; observability on EKS; full CI/CD with OIDC + gated approvals.</p></div>
+    <div class="card pending"><h4>⏳ Pending</h4>
+      <p>Cross-cloud VPN (gated off); central <b>CockroachDB</b> (needs VPN first);
+      control-plane container; global DNS (north-south).</p></div>
+  </div>
+  <h3>Operate</h3>
+  <pre><span class="m"># access</span>
+aws eks update-kubeconfig --name bullion-eks --region us-east-1 --alias eks
+gcloud container clusters get-credentials bullion-gke --zone us-central1-a --project project-f38bfcd6-70ff-4a8d-9cd
+<span class="m"># deploy: PR -> plan, merge -> gated apply ; teardown: Actions -> deploy -> action=destroy</span></pre>
+  <div class="callout note"><b>Cost &amp; security:</b> both clusters + LoadBalancers bill while
+  running — run the <code>destroy</code> workflow when idle. Rotate the bootstrap AWS key
+  (shared in plaintext during setup). The <code>Olisa</code> user holds AdministratorAccess
+  (scope down beyond testing); GKE control-plane endpoint is public for CI/local access.</div>
+  <p class="foot">Bullion Infrastructure · active-active multi-cloud Kubernetes · repo
+  Olisaemeka111/bullion-infrastructure · report generated 2026-06-23. — End of report.</p>
+</section>
+
+</body>
+</html>

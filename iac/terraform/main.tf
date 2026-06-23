@@ -55,11 +55,16 @@ module "cross_cloud" {
   source = "./modules/cross_cloud"
   count  = (var.enable_aws && var.enable_gcp && var.enable_cross_cloud) ? 1 : 0
 
-  name_prefix         = "${var.name_prefix}-xc"
-  aws_vpc_id          = module.eks[0].vpc_id
-  aws_route_table_ids = module.eks[0].private_route_table_ids
-  gcp_network         = module.gke[0].network_id
-  gcp_region          = var.gcp_region
+  name_prefix                = "${var.name_prefix}-xc"
+  aws_vpc_id                 = module.eks[0].vpc_id
+  aws_vpc_cidr               = module.eks[0].vpc_cidr
+  aws_route_table_ids        = module.eks[0].private_route_table_ids
+  eks_node_security_group_id = module.eks[0].node_security_group_id
+  gcp_network                = module.gke[0].network_id
+  gcp_region                 = var.gcp_region
+  gke_subnet_cidr            = module.gke[0].subnet_cidr
+  gke_pods_cidr              = module.gke[0].pods_cidr
+  gke_services_cidr          = module.gke[0].services_cidr
 }
 
 # ---- Azure : Azure AKS ------------------------------------------------------

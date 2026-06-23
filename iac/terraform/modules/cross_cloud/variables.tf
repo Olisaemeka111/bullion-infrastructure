@@ -20,6 +20,15 @@ variable "aws_amazon_side_asn" {
   default = 64512
 }
 
+variable "aws_vpc_cidr" {
+  description = "EKS VPC CIDR (advertised to GCP; allowed into the GKE firewall)."
+  type        = string
+}
+variable "eks_node_security_group_id" {
+  description = "EKS node SG to open for the GKE pod/subnet CIDRs (CockroachDB :26257 etc.)."
+  type        = string
+}
+
 # ---- GCP side (GKE VPC) ----
 variable "gcp_network" {
   description = "GKE VPC network self_link/id."
@@ -31,4 +40,13 @@ variable "gcp_region" {
 variable "gcp_router_asn" {
   type    = number
   default = 65001
+}
+variable "gke_subnet_cidr" {
+  type = string
+}
+variable "gke_pods_cidr" {
+  type = string
+}
+variable "gke_services_cidr" {
+  type = string
 }
