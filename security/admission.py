@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 # Pod Security Standards (Kubernetes): privileged < baseline < restricted
 PSS_LEVELS = ("privileged", "baseline", "restricted")
-TRUSTED_REGISTRIES = ("registry.internal/", "ghcr.io/anthropic-trusted/")
+TRUSTED_REGISTRIES = ("registry.internal/", "ghcr.io/trusted-org/")
 
 
 @dataclass
