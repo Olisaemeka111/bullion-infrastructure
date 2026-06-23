@@ -1,9 +1,9 @@
 # Copy to terraform.tfvars and edit. Each cloud can be toggled independently so
 # you can start with one (cheapest path) and add the others later.
 
-name_prefix        = "fleet-mini"
+name_prefix        = "bullion"
 node_count         = 2        # the "2 medium nodes per cloud" requirement
-kubernetes_version = "1.29"
+kubernetes_version = "1.32"   # must be a currently-supported EKS version
 
 # ---- AWS (EKS) ----
 enable_aws             = true
@@ -16,7 +16,8 @@ enable_gcp  = true
 gcp_project = "my-gcp-project-id"
 gcp_region  = "us-central1"
 
-# ---- Azure (AKS) ----
-enable_azure       = true
+# ---- Azure (AKS) ----  (disabled: needs a subscription + uncommenting the
+# azurerm provider/module in main.tf — see comments there)
+enable_azure       = false
 azure_location     = "eastus"
 azure_node_vm_size = "Standard_D2s_v3"

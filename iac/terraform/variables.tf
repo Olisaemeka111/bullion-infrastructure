@@ -4,9 +4,9 @@
 ###############################################################################
 
 variable "name_prefix" {
-  description = "Prefix applied to all cluster / network names."
+  description = "Prefix applied to all cluster / network names (e.g. bullion-eks, bullion-gke)."
   type        = string
-  default     = "fleet-mini"
+  default     = "bullion"
 }
 
 variable "node_count" {
@@ -16,9 +16,9 @@ variable "node_count" {
 }
 
 variable "kubernetes_version" {
-  description = "Kubernetes minor version for all clusters (must be supported by each cloud)."
+  description = "Kubernetes minor version for EKS (must be a currently-supported EKS version). GKE Autopilot ignores this and uses its release channel."
   type        = string
-  default     = "1.29"
+  default     = "1.32"
 }
 
 variable "tags" {
