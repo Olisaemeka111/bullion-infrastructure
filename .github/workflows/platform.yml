@@ -55,19 +55,21 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: EKS kubeconfig (context 'eks')
-        run: aws eks update-kubeconfig --name "$EKS_NAME" --region "$AWS_REGION" --alias eks
-
       - name: Auth GCP (OIDC)
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # GKE first: get-gke-credentials sets KUBECONFIG, then EKS is added to the
+      # SAME kubeconfig so both contexts ('eks' + 'gke') are visible to kubectl.
       - name: GKE kubeconfig
         uses: google-github-actions/get-gke-credentials@v2
         with:
           cluster_name: ${{ env.GKE_NAME }}
           location: ${{ env.GKE_LOCATION }}
+      - name: EKS kubeconfig (context 'eks')
+        run: aws eks update-kubeconfig --name "$EKS_NAME" --region "$AWS_REGION" --alias eks
       - name: Normalize GKE context to 'gke'
         run: |
           set -euo pipefail
@@ -80,7 +82,7 @@ jobs:
         if: github.event.inputs.component == 'all' || github.event.inputs.component == 'mesh' || github.event_name == 'push'
         run: |
           set -euo pipefail
-          cd mesh/install && ./gen-ca.sh && cd -
+          cd mesh/install && bash gen-ca.sh && cd -
           for pair in "eks:eks" "gke:gke"; do
             c="${pair%%:*}"; ctx="${pair##*:}"
             kubectl --context "$ctx" create namespace istio-system --dry-run=client -o yaml | kubectl --context "$ctx" apply -f -
