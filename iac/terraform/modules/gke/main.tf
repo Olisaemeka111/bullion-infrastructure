@@ -45,6 +45,12 @@ resource "google_container_cluster" "primary" {
   release_channel {
     channel = "REGULAR"
   }
+
+  # Required for the node pool's GKE_METADATA (Workload Identity) setting.
+  workload_identity_config {
+    workload_pool = "${var.project}.svc.id.goog"
+  }
+
   deletion_protection = false
 }
 
