@@ -39,39 +39,7 @@ spec:
       interval: 5s
       baseEjectionTime: 30s
       maxEjectionPercent: 100 # a fully-failed cloud is 100% ejected -> drains
----
-# North-south ingress: users hit any cluster's ingress gateway; the same global
-# routing applies, so a regional GSLB/DNS (iac/terraform/modules/global_dns) can
-# point at all three ingresses active-active.
-apiVersion: networking.istio.io/v1beta1
-kind: Gateway
-metadata:
-  name: hello-ingress
-  namespace: demo
-spec:
-  selector:
-    istio: ingressgateway
-  servers:
-    - port:
-        number: 80
-        name: http
-        protocol: HTTP
-      hosts:
-        - "*"
----
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: hello
-  namespace: demo
-spec:
-  hosts:
-    - "*"
-  gateways:
-    - hello-ingress
-  http:
-    - route:
-        - destination:
-            host: hello.demo.svc.cluster.local
-            port:
-              number: 80
+# NOTE: the north-south ingress (the public "*" Gateway on istio-ingressgateway)
+# is owned by the board game (mesh/apps/game.yaml). The hello service stays as an
+# in-mesh active-active demo reachable cluster-internally; it no longer binds the
+# shared ingress to avoid a Gateway conflict on host "*".

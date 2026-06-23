@@ -1,6 +1,6 @@
-# Istio multi-primary control plane for the GKE Autopilot cluster (network: gcp).
-# NOTE: on GKE Autopilot, Istio runs as ordinary workloads (no node/CNI access
-# required), which is exactly why we chose Istio over Cilium Cluster Mesh here.
+# Istio multi-primary control plane for the GKE Standard cluster (network: gcp).
+# Each cluster runs its own istiod (multi-primary) + an east-west gateway for
+# cross-cloud mTLS and a north-south ingress gateway for user traffic.
 apiVersion: install.istio.io/v1alpha1
 kind: IstioOperator
 metadata:
@@ -29,3 +29,16 @@ spec:
               - { name: tls, port: 15443, targetPort: 15443 }
               - { name: tls-istiod, port: 15012, targetPort: 15012 }
               - { name: tls-webhook, port: 15017, targetPort: 15017 }
+      # North-south ingress: public LoadBalancer that serves user traffic (the
+      # board game) on :80. Distinct from the east-west gateway (mesh mTLS).
+      - name: istio-ingressgateway
+        label:
+          istio: ingressgateway
+        enabled: true
+        k8s:
+          service:
+            type: LoadBalancer
+            ports:
+              - { name: status-port, port: 15021, targetPort: 15021 }
+              - { name: http2, port: 80, targetPort: 8080 }
+              - { name: https, port: 443, targetPort: 8443 }
