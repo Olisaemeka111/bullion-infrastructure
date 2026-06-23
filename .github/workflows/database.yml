@@ -1,0 +1,100 @@
+name: database
+
+# Deploy the central, cross-cloud CockroachDB through CI/CD.
+#   1. discover the live InternalIPs of every node in BOTH clusters
+#   2. build the --join list from them and apply the DaemonSet to both clusters
+#   3. run `cockroach init` ONCE (idempotent — re-runs are no-ops)
+#   4. report the cluster's live node count
+#
+# Requires the AWS<->GCP VPN (enable_cross_cloud) to be up so CRDB nodes can gossip
+# across clouds on their node IPs. Auth is keyless OIDC.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["mesh/data/**", ".github/workflows/database.yml"]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  EKS_NAME: bullion-eks
+  GKE_NAME: bullion-gke
+  GKE_LOCATION: ${{ vars.GCP_ZONE || 'us-central1-a' }}
+
+jobs:
+  database:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+
+      # ---- auth + kubeconfig for BOTH clusters ----
+      - name: Auth AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Auth GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - name: GKE kubeconfig
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_NAME }}
+          location: ${{ env.GKE_LOCATION }}
+      - name: EKS kubeconfig (context 'eks')
+        run: aws eks update-kubeconfig --name "$EKS_NAME" --region "$AWS_REGION" --alias eks
+      - name: Normalize GKE context to 'gke'
+        run: |
+          set -euo pipefail
+          ctx=$(kubectl config get-contexts -o name | grep "$GKE_NAME" | head -1)
+          kubectl config rename-context "$ctx" gke
+
+      # ---- 1+2. build join list from live node IPs, deploy DaemonSet to both ----
+      - name: Deploy CockroachDB DaemonSet (cross-cloud)
+        run: |
+          set -euo pipefail
+          jp='{.items[*].status.addresses[?(@.type=="InternalIP")].address}'
+          eks_ips=$(kubectl --context eks get nodes -o jsonpath="$jp")
+          gke_ips=$(kubectl --context gke get nodes -o jsonpath="$jp")
+          join=$(echo $eks_ips $gke_ips | tr ' ' '\n' | sort -u | sed 's/$/:26257/' | paste -sd, -)
+          echo "Join list: $join"
+          for ctx in eks gke; do
+            sed "s|__JOIN__|${join}|g" mesh/data/cockroachdb.yaml | kubectl --context "$ctx" apply -f -
+          done
+          # DaemonSet pods reach Running (not Ready) before the cluster is initialized
+          kubectl --context eks -n data rollout status ds/cockroachdb --timeout=180s || true
+          kubectl --context gke -n data rollout status ds/cockroachdb --timeout=180s || true
+
+      # ---- 3. initialize the cluster ONCE (idempotent) ----
+      - name: Initialize cluster (once)
+        run: |
+          set -euo pipefail
+          pod=$(kubectl --context eks -n data get pod -l app=cockroachdb -o jsonpath='{.items[0].metadata.name}')
+          echo "Running init from $pod ..."
+          # exits non-zero with "already initialized" on re-runs — that's expected
+          kubectl --context eks -n data exec "$pod" -- \
+            /cockroach/cockroach init --insecure --host=localhost:26257 \
+            || echo "Cluster already initialized (no-op)."
+
+      # ---- 4. report ----
+      - name: Report cluster status
+        if: always()
+        run: |
+          set -euo pipefail
+          pod=$(kubectl --context eks -n data get pod -l app=cockroachdb -o jsonpath='{.items[0].metadata.name}' || true)
+          nodes=$(kubectl --context eks -n data exec "$pod" -- \
+            /cockroach/cockroach node status --insecure --host=localhost:26257 2>/dev/null || echo "status pending")
+          {
+            echo "## Central CockroachDB — cross-cloud"
+            echo '```'
+            echo "$nodes"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

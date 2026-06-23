@@ -1,0 +1,72 @@
+# Central CockroachDB spanning BOTH clouds — one logical, strongly-consistent
+# database for the active-active platform. Runs on hostNetwork so every node
+# advertises its routable NODE IP and CRDB nodes gossip cross-cloud over the
+# AWS<->GCP VPN. One CRDB node per K8s node (DaemonSet).
+#
+# __JOIN__ is filled in by the database.yml workflow with the live InternalIPs of
+# every node in both clusters, so the join list is never hand-maintained.
+#
+# Insecure mode is used for this cross-cloud validation; enabling TLS (cert-manager
+# or `cockroach cert`) is the production-hardening step.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cockroachdb
+  namespace: data
+spec:
+  selector:
+    matchLabels: { app: cockroachdb }
+  template:
+    metadata:
+      labels: { app: cockroachdb }
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: cockroachdb
+          image: cockroachdb/cockroach:v24.3.5
+          command:
+            - /cockroach/cockroach
+            - start
+            - --insecure
+            - --advertise-addr=$(HOST_IP)
+            - --join=__JOIN__
+            - --http-addr=0.0.0.0:8090
+            - --cache=.25
+            - --max-sql-memory=.25
+            - --store=/cockroach/cockroach-data
+          env:
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          ports:
+            - { containerPort: 26257, hostPort: 26257, name: sql }
+            - { containerPort: 8090, hostPort: 8090, name: http }
+          resources:
+            requests: { cpu: "300m", memory: "1Gi" }
+            limits: { cpu: "1", memory: "2Gi" }
+          volumeMounts:
+            - { name: data, mountPath: /cockroach/cockroach-data }
+      volumes:
+        - name: data
+          hostPath: { path: /var/lib/cockroachdb, type: DirectoryOrCreate }
+---
+# In-cluster SQL endpoint for apps (routes to the local CRDB node on each cluster).
+apiVersion: v1
+kind: Service
+metadata:
+  name: cockroachdb-public
+  namespace: data
+spec:
+  selector: { app: cockroachdb }
+  ports:
+    - { name: sql, port: 26257, targetPort: 26257 }
+    - { name: http, port: 8090, targetPort: 8090 }

@@ -1,0 +1,95 @@
+# DevSecOps board game — global ACTIVE-ACTIVE service across both clouds.
+# Deployed to EKS + GKE; the Istio mesh load-balances 50/50 across clouds and the
+# ingress gateway exposes it on a public LoadBalancer. __IMAGE__ is substituted by
+# the game.yml workflow with the GHCR image it just built.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: game
+  labels:
+    istio-injection: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: board-game
+  namespace: game
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: board-game }
+  template:
+    metadata:
+      labels: { app: board-game }
+    spec:
+      imagePullSecrets:
+        - name: ghcr
+      containers:
+        - name: board-game
+          image: __IMAGE__
+          ports:
+            - containerPort: 80
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: board-game
+  namespace: game
+  labels: { app: board-game }
+spec:
+  selector: { app: board-game }
+  ports:
+    - { name: http, port: 80, targetPort: 80 }
+---
+# Active-active: 50/50 across the two cloud regions + outlier failover.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: board-game
+  namespace: game
+spec:
+  host: board-game.game.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      simple: ROUND_ROBIN
+      localityLbSetting:
+        enabled: true
+        distribute:
+          - from: us-east-1/*
+            to: { "us-east-1/*": 50, "us-central1/*": 50 }
+          - from: us-central1/*
+            to: { "us-east-1/*": 50, "us-central1/*": 50 }
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 5s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 100
+---
+# North-south ingress: the public LoadBalancer (istio-ingressgateway) serves it at /
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: game-ingress
+  namespace: game
+spec:
+  selector: { istio: ingressgateway }
+  servers:
+    - port: { number: 80, name: http, protocol: HTTP }
+      hosts: ["*"]
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: board-game
+  namespace: game
+spec:
+  hosts: ["*"]
+  gateways: [game-ingress]
+  http:
+    - route:
+        - destination:
+            host: board-game.game.svc.cluster.local
+            port: { number: 80 }
