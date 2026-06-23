@@ -1,10 +1,12 @@
-# Makes the global `hello` service ACTIVE-ACTIVE with automatic failover:
-#  * localityLbSetting.failover + distribute: traffic prefers the local cloud but
-#    spreads across all healthy clouds; if the local region's endpoints fail,
-#    outlierDetection ejects them and traffic shifts to the other clouds.
-#  * This is the data-plane equivalent of the GlobalTrafficDirector model in
-#    networking/global_lb.py (and what sim/active_active.py demonstrates).
-# Apply to the `demo` namespace in ALL three clusters.
+# Makes the global `hello` service ACTIVE-ACTIVE across clouds.
+#  * localityLbSetting.distribute spreads traffic from EITHER cloud evenly across
+#    both clouds (50/50) — true active-active, not prefer-local.
+#  * outlierDetection ejects a cloud's endpoints when they fail, so traffic
+#    automatically redistributes to the survivor (the failover behaviour) — note
+#    Istio forbids specifying 'distribute' and 'failover' together, so we use
+#    distribute + outlier ejection.
+#  * Data-plane equivalent of GlobalTrafficDirector in networking/global_lb.py.
+# Apply to the `demo` namespace in every cluster.
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
@@ -20,25 +22,21 @@ spec:
       simple: LEAST_REQUEST
       localityLbSetting:
         enabled: true
-        # spread evenly across clouds (active-active); change to taste
+        # 50/50 across the two clouds, regardless of where the request originates
         distribute:
           - from: "network-aws/*"
             to:
-              "network-aws/*": 34
-              "network-gcp/*": 33
-              "network-azure/*": 33
-        failover:
-          - from: aws
-            to: gcp
-          - from: gcp
-            to: azure
-          - from: azure
-            to: aws
+              "network-aws/*": 50
+              "network-gcp/*": 50
+          - from: "network-gcp/*"
+            to:
+              "network-aws/*": 50
+              "network-gcp/*": 50
     outlierDetection:
       consecutive5xxErrors: 3
       interval: 5s
       baseEjectionTime: 30s
-      maxEjectionPercent: 100   # a fully-failed cloud is 100% ejected -> drains
+      maxEjectionPercent: 100 # a fully-failed cloud is 100% ejected -> drains
 ---
 # North-south ingress: users hit any cluster's ingress gateway; the same global
 # routing applies, so a regional GSLB/DNS (iac/terraform/modules/global_dns) can
