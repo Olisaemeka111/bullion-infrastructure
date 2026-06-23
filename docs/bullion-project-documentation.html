@@ -324,8 +324,9 @@
   <div class="callout note"><b>Known hardening items (validation environment).</b> The bootstrap
   AWS key was shared during setup and must be <b>rotated</b>; the operator IAM user currently
   holds <code>AdministratorAccess</code> (scope down); the GKE control-plane endpoint is publicly
-  reachable (restrict via authorized networks); HCP Vault Secrets reached end-of-life — a Vault
-  Dedicated or cloud-native secret manager is recommended for runtime app secrets.</div>
+  reachable (restrict via authorized networks); and CockroachDB currently runs in insecure
+  mode (enable TLS for production). Deploy identifiers are held as GitHub Actions secrets;
+  for runtime app secrets a cloud-native secret manager + External Secrets is recommended.</div>
 </section>
 
 <!-- 8. OBSERVABILITY + 9 DATA -->
@@ -447,8 +448,8 @@ kubectl --context eks -n demo exec curl -c curl -- sh -c \
     <tr><td>Broad IAM (Administrator) + shared bootstrap key</td><td>rotate the key; scope roles to least privilege</td></tr>
     <tr><td>Public GKE control-plane endpoint</td><td>restrict with master authorized networks</td></tr>
     <tr><td>Free-trial quotas (GCP IPs/CPU)</td><td>request uplifts before scaling / production</td></tr>
-    <tr><td>No central DB yet</td><td>enable VPN + deploy CockroachDB (the active-active data layer)</td></tr>
-    <tr><td>Runtime secret management (Vault Secrets EOL)</td><td>adopt Vault Dedicated or a cloud secret manager + External Secrets</td></tr>
+    <tr><td>CockroachDB runs in insecure mode</td><td>enable TLS (cert-manager / <code>cockroach cert</code>) for production</td></tr>
+    <tr><td>Runtime app-secret management</td><td>adopt a cloud-native secret manager + External Secrets Operator</td></tr>
   </table>
 </section>
 
@@ -459,15 +460,14 @@ kubectl --context eks -n demo exec curl -c curl -- sh -c \
     <div>
       <h3>A · Repository layout</h3>
       <pre>iac/terraform/   EKS, GKE, global_dns, cross_cloud + S3 backend
-iac/vault/       Vault config-as-code (future)
-mesh/install/    Istio multi-primary (CA, IOPs, east-west, secrets)
-mesh/apps/       global service + active-active DestinationRule
+mesh/install/    Istio multi-primary (CA, IOPs, east-west + ingress, secrets)
+mesh/apps/       global service + active-active DestinationRule + board game
 mesh/observability/  node-exporter + federated Prometheus
-mesh/data/       CockroachDB multi-region (scaffold)
-.github/workflows/  ci · deploy · platform
+mesh/data/       CockroachDB multi-region (cross-cloud, via database.yml)
+.github/workflows/  ci · deploy · platform · database · game
 control_plane/ providers/ agent/ security/
   networking/ workflows/ sim/ tests/   (offline reference)
-DEPLOY · CICD · VAULT · INFRASTRUCTURE · ARCHITECTURE · RUNBOOK · TESTING</pre>
+DEPLOY · CICD · INFRASTRUCTURE · ARCHITECTURE · RUNBOOK · TESTING</pre>
     </div>
     <div>
       <h3>B · Key identifiers</h3>

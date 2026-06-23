@@ -49,14 +49,12 @@ iac/terraform/                                   # REAL deployable IaC
   modules/aks/   (VNet + AKS, 2x Standard_D2s_v3)
   modules/global_dns/  (Route53 active-active across the 3 ingresses)
 iac/atlantis.yaml                                # PR-driven plan/apply
-iac/vault/                                       # Vault config-as-code (policies + OIDC setup)
 mesh/                                            # ACTIVE-ACTIVE fabric (joins the 3 clusters)
   install/    Istio multi-primary (shared CA, east-west gateways, remote secrets)
   apps/       global service + locality-aware load balancing + failover
   observability/  per-node node-exporter DaemonSet + federated Prometheus
   data/       CockroachDB multi-region (multi-master, survive region failure)
-  secrets/    External Secrets Operator -> pulls app secrets from Vault
-DEPLOY.md  CICD.md  VAULT.md                      # deploy, CI/CD, and secret-management guides
+DEPLOY.md  CICD.md                               # deploy + CI/CD (incl. secret) guides
 ```
 
 ## Quickstart — prove the logic offline (no cloud, no deps)
@@ -99,12 +97,13 @@ a `production` environment), and `destroy` on manual dispatch — with **keyless
 auth** to all three clouds (no static cloud keys). One-time setup (remote state +
 OIDC) is in **[CICD.md](CICD.md)**.
 
-### Secret management with HashiCorp Vault
-All secrets live in **Vault**, not GitHub. The pipeline pulls cloud identifiers via
-**GitHub OIDC → Vault** (`hashicorp/vault-action`, short-lived tokens), and the
-clusters pull runtime app secrets (CockroachDB, Grafana) via **External Secrets
-Operator**. GitHub stores only the public `VAULT_ADDR`. Setup + config-as-code
-(`iac/vault/`, least-privilege policies) is in **[VAULT.md](VAULT.md)**.
+### Secret management
+Cloud auth is **keyless OIDC** — no static cloud keys exist. The only values stored
+are the non-sensitive OIDC **identifiers** (AWS role ARN, GCP Workload Identity
+provider + service account), held as **GitHub Actions secrets** and read by the
+workflows via `secrets.*`. `iac/generate-credentials.sh` creates the cloud OIDC
+resources and sets these secrets/variables in one go via the `gh` CLI — see
+**[CICD.md](CICD.md)**.
 
 ## How this maps to the reference design
 The architecture, lifecycle state machines, safety budgets, security gate,

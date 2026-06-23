@@ -77,13 +77,14 @@ All deploys run through **GitHub Actions** with **keyless OIDC** auth and a gate
 | `ci.yml` | 80 stdlib tests + `terraform fmt/validate` (no cloud creds) | every push/PR |
 | `deploy.yml` | Terraform: EKS, GKE, (cross-cloud VPN) — `plan` on PR, gated `apply` on merge, `destroy` on dispatch | PR / push / dispatch |
 | `platform.yml` | Istio multi-primary join + global app + observability across both clusters | dispatch / mesh changes |
+| `database.yml` | Cross-cloud CockroachDB: discover node IPs → deploy DaemonSet to both clusters → `init` once | dispatch / `mesh/data/**` |
+| `game.yml` | Build the board game → push to GHCR → deploy active-active to both clusters | dispatch / `mesh/apps/game.yaml` |
 
 - **AWS auth:** GitHub OIDC → IAM role `fleet-mini-gha` (no static keys).
 - **GCP auth:** GitHub OIDC → Workload Identity Federation → service account `fleet-mini-gha`.
-- **Secrets:** the deploy identifiers are GitHub repo secrets/variables (they are
-  non-secret OIDC identifiers, not credentials). *Note:* HCP Vault Secrets was the
-  original plan but reached end-of-life; the `iac/vault/` config-as-code remains for
-  a future full-Vault (Dedicated) setup.
+- **Secrets:** the deploy identifiers are GitHub Actions secrets/variables (they are
+  non-secret OIDC identifiers, not credentials). `iac/generate-credentials.sh` sets
+  them via the `gh` CLI. Cloud auth itself is keyless OIDC — no static cloud keys.
 - **Remote state:** S3 with native locking; partial backend config supplied at
   `init` time.
 
@@ -222,11 +223,10 @@ database" — needs the VPN first), control-plane container, global DNS.
 ```
 control_plane/ providers/ agent/ security/ networking/ workflows/ observability/ tests/ sim/
 iac/terraform/      EKS + GKE + global_dns + cross_cloud (VPN) modules; S3 backend
-iac/vault/          Vault config-as-code (policies + OIDC) — for future Vault Dedicated
-mesh/install/       Istio multi-primary (shared CA, IOPs, east-west, remote secrets)
-mesh/apps/          global service + active-active DestinationRule
+mesh/install/       Istio multi-primary (shared CA, IOPs, east-west + ingress, remote secrets)
+mesh/apps/          global service + active-active DestinationRule + board game
 mesh/observability/ node-exporter DaemonSet + federated Prometheus
-mesh/data/          CockroachDB multi-region (scaffold)
-.github/workflows/  ci.yml · deploy.yml · platform.yml
-DEPLOY.md · CICD.md · VAULT.md · ARCHITECTURE.md · RUNBOOK.md · TESTING.md
+mesh/data/          CockroachDB multi-region (cross-cloud, deployed via database.yml)
+.github/workflows/  ci.yml · deploy.yml · platform.yml · database.yml · game.yml
+DEPLOY.md · CICD.md · ARCHITECTURE.md · RUNBOOK.md · TESTING.md
 ```

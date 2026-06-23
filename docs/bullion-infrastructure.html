@@ -171,9 +171,9 @@
       <p><b>AWS:</b> GitHub OIDC → IAM role <code>fleet-mini-gha</code>. <b>GCP:</b> OIDC →
       Workload Identity Federation → SA <code>fleet-mini-gha</code>. No long-lived keys.</p></div>
     <div class="card cicd"><h4>State &amp; secrets</h4>
-      <p>S3 <b>native state locking</b> (no DynamoDB). Deploy identifiers in GitHub vars/secrets
-      (OIDC identifiers, not credentials). HCP Vault Secrets reached EOL → <code>iac/vault/</code>
-      kept for a future Vault Dedicated setup.</p></div>
+      <p>S3 <b>native state locking</b> (no DynamoDB). Cloud auth is keyless OIDC; only the
+      non-sensitive OIDC identifiers are stored, as <b>GitHub Actions secrets/variables</b>
+      (set via <code>iac/generate-credentials.sh</code> using the <code>gh</code> CLI).</p></div>
   </div>
 </section>
 
@@ -214,7 +214,7 @@ for i in $(seq 20); do curl -s hello.demo.svc.cluster.local; done
   <div class="sec-head"><span class="sec-num" style="background:var(--ink)">5</span><h2>Tasks completed</h2></div>
   <table>
     <tr><th>#</th><th>Task</th><th>Status</th></tr>
-    <tr><td>1</td><td>Tooling (gh, terraform, aws, gcloud, az, kubectl, istioctl, hcp)</td><td class="ok">✓</td></tr>
+    <tr><td>1</td><td>Tooling (gh, terraform, aws, gcloud, az, kubectl, istioctl)</td><td class="ok">✓</td></tr>
     <tr><td>2</td><td>Cloud identities via OIDC (AWS role, GCP WIF)</td><td class="ok">✓</td></tr>
     <tr><td>3</td><td>Remote state (S3 native locking)</td><td class="ok">✓</td></tr>
     <tr><td>4</td><td>CI/CD pipelines + gated production env</td><td class="ok">✓</td></tr>

@@ -1,31 +1,29 @@
 #!/usr/bin/env bash
 # generate-credentials.sh — create EVERY credential the pipeline needs, in one go,
-# and load them into Vault. Run this once from a machine that is logged in to the
-# clouds you enable and to Vault.
+# and load them into GitHub (Actions secrets + variables) via the gh CLI. Run this
+# once from a machine logged in to the clouds you enable and to GitHub (gh auth login).
 #
 # What it creates:
 #   * S3 bucket for Terraform remote state (native locking, no DynamoDB)
 #   * AWS  : GitHub OIDC provider + IAM role  (-> AWS_ROLE_ARN)
 #   * GCP  : Workload Identity pool/provider + service account (-> GCP_WIF_PROVIDER, SA)
 #   * Azure: app registration + federated credentials (-> AZURE_CLIENT_ID/TENANT/SUB)
-#   * random app passwords (CockroachDB, Grafana)
-#   * writes all of the above into Vault via iac/vault/setup.sh
+#   * sets all of the above as GitHub Actions secrets/variables via `gh`
 #
-# It does NOT print or commit any secret. Cloud credentials are created in YOUR
-# accounts using YOUR logged-in CLIs — they cannot be minted from anywhere else.
+# Cloud auth stays keyless OIDC — only the (non-sensitive) OIDC identifiers are
+# stored as GitHub secrets so the workflows can read them. Cloud resources are
+# created in YOUR accounts using YOUR logged-in CLIs.
 #
 # Required env:
-#   GITHUB_REPO=ORG/REPO   VAULT_ADDR=https://...:8200   [VAULT_NAMESPACE=admin]
+#   GITHUB_REPO=ORG/REPO
 #   GCP_PROJECT=<id>       (only if you enable GCP)
 # Toggle clouds: ENABLE_AWS / ENABLE_GCP / ENABLE_AZURE  (default true)
 set -euo pipefail
 
 : "${GITHUB_REPO:?set GITHUB_REPO=ORG/REPO}"
-: "${VAULT_ADDR:?set VAULT_ADDR}"
-export VAULT_NAMESPACE="${VAULT_NAMESPACE:-admin}"
+command -v gh >/dev/null || { echo "gh CLI required (gh auth login)"; exit 1; }
 ENABLE_AWS="${ENABLE_AWS:-true}"; ENABLE_GCP="${ENABLE_GCP:-true}"; ENABLE_AZURE="${ENABLE_AZURE:-true}"
 OWNER="${GITHUB_REPO%%/*}"
-HERE="$(cd "$(dirname "$0")" && pwd)"
 REGION="${AWS_REGION:-us-east-1}"
 
 # ---------------------------------------------------------------- AWS -------
@@ -105,15 +103,25 @@ if [[ "$ENABLE_AZURE" == "true" ]]; then
   echo "   AZURE_CLIENT_ID=$APP"
 fi
 
-# --------------------------------------------------- Vault (store it all) ---
-echo "==> Vault: scaffold OIDC auth/policies + store all credentials"
-# generate-credentials.sh exports AWS_ROLE_ARN/GCP_*/AZURE_* which setup.sh reads.
-"$HERE/vault/setup.sh"
+# ------------------------------------------- GitHub (store identifiers) ------
+echo "==> GitHub: set Actions secrets + variables on $GITHUB_REPO"
+# OIDC identifiers as Actions secrets (the workflows read them via secrets.*)
+[[ "${AWS_ROLE_ARN:-}" ]]          && gh secret set AWS_ROLE_ARN          --repo "$GITHUB_REPO" --body "$AWS_ROLE_ARN"
+[[ "${GCP_WIF_PROVIDER:-}" ]]      && gh secret set GCP_WIF_PROVIDER      --repo "$GITHUB_REPO" --body "$GCP_WIF_PROVIDER"
+[[ "${GCP_SERVICE_ACCOUNT:-}" ]]   && gh secret set GCP_SERVICE_ACCOUNT   --repo "$GITHUB_REPO" --body "$GCP_SERVICE_ACCOUNT"
+[[ "${AZURE_CLIENT_ID:-}" ]]       && gh secret set AZURE_CLIENT_ID       --repo "$GITHUB_REPO" --body "$AZURE_CLIENT_ID"
+[[ "${AZURE_TENANT_ID:-}" ]]       && gh secret set AZURE_TENANT_ID       --repo "$GITHUB_REPO" --body "$AZURE_TENANT_ID"
+[[ "${AZURE_SUBSCRIPTION_ID:-}" ]] && gh secret set AZURE_SUBSCRIPTION_ID --repo "$GITHUB_REPO" --body "$AZURE_SUBSCRIPTION_ID"
+
+# non-sensitive config as repo variables (the workflows read them via vars.*)
+[[ "${TF_STATE_BUCKET:-}" ]] && gh variable set TF_STATE_BUCKET --repo "$GITHUB_REPO" --body "$TF_STATE_BUCKET"
+gh variable set TF_BACKEND_REGION --repo "$GITHUB_REPO" --body "$REGION"
+gh variable set AWS_REGION        --repo "$GITHUB_REPO" --body "$REGION"
+gh variable set ENABLE_AWS        --repo "$GITHUB_REPO" --body "$ENABLE_AWS"
+gh variable set ENABLE_GCP        --repo "$GITHUB_REPO" --body "$ENABLE_GCP"
+gh variable set ENABLE_AZURE      --repo "$GITHUB_REPO" --body "$ENABLE_AZURE"
 
 echo
-echo "✓ Done. Now set these GitHub repo VARIABLES (no secrets):"
-echo "   VAULT_ADDR=$VAULT_ADDR"
-echo "   VAULT_NAMESPACE=$VAULT_NAMESPACE"
-[[ "${TF_STATE_BUCKET:-}" ]] && echo "   TF_STATE_BUCKET=$TF_STATE_BUCKET"
-echo "   TF_BACKEND_REGION=$REGION   AWS_REGION=$REGION"
-echo "   ENABLE_AWS=$ENABLE_AWS  ENABLE_GCP=$ENABLE_GCP  ENABLE_AZURE=$ENABLE_AZURE"
+echo "✓ Done. GitHub Actions secrets + variables are set on $GITHUB_REPO."
+echo "  Secrets:   AWS_ROLE_ARN, GCP_WIF_PROVIDER, GCP_SERVICE_ACCOUNT$([[ "$ENABLE_AZURE" == "true" ]] && echo ", AZURE_*")"
+echo "  Variables: TF_STATE_BUCKET, TF_BACKEND_REGION, AWS_REGION, ENABLE_AWS/GCP/AZURE"

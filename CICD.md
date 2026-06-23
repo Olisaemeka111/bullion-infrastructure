@@ -17,10 +17,14 @@ There is a one-time setup below (do it once; then it's just PRs).
 You need admin on the GitHub repo and on each cloud account you enable. Replace
 `OWNER/REPO` with your repository throughout.
 
-**Secrets are managed in HashiCorp Vault** (see [VAULT.md](VAULT.md)). Set that up
-first: `iac/vault/setup.sh` enables GitHub OIDC on Vault and seeds
-`secret/cluster-infra-mini/cloud`. The cloud identifiers produced in §2 below go
-*into Vault*, and GitHub only needs the `VAULT_ADDR` variable (§3).
+**Fast path:** `iac/generate-credentials.sh` performs everything in §1–§3 below in
+one run — it creates the S3 state bucket and the cloud OIDC resources, then sets
+the resulting identifiers as **GitHub Actions secrets + variables** via the `gh`
+CLI. Run it once (`GITHUB_REPO=OWNER/REPO GCP_PROJECT=<id> ./iac/generate-credentials.sh`)
+or follow the manual steps below.
+
+Cloud auth is **keyless OIDC**, so the only things stored in GitHub are the
+non-sensitive OIDC **identifiers** (role ARN / WIF provider / service account).
 
 ---
 
@@ -64,8 +68,8 @@ Create a role `fleet-mini-gha` with this trust policy, then attach permissions:
     "StringLike":   { "token.actions.githubusercontent.com:sub": "repo:OWNER/REPO:*" }
   }}]}
 ```
-→ Vault key `AWS_ROLE_ARN = arn:aws:iam::<ACCOUNT_ID>:role/fleet-mini-gha`
-  (store in `secret/cluster-infra-mini/cloud` — see [VAULT.md](VAULT.md))
+→ GitHub secret `AWS_ROLE_ARN = arn:aws:iam::<ACCOUNT_ID>:role/fleet-mini-gha`
+  (`gh secret set AWS_ROLE_ARN --body ...`)
 
 ### 2b. GCP (Workload Identity Federation)
 ```bash
@@ -93,9 +97,9 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" \
   --member "principalSet://iam.googleapis.com/projects/$PROJNUM/locations/global/workloadIdentityPools/$POOL/attribute.repository/OWNER/REPO"
 gcloud services enable container.googleapis.com compute.googleapis.com --project "$PROJECT"
 ```
-→ Vault keys (in `secret/cluster-infra-mini/cloud`):
+→ GitHub secrets:
   `GCP_WIF_PROVIDER = projects/$PROJNUM/locations/global/workloadIdentityPools/github-pool/providers/github-provider`,
-  `GCP_SERVICE_ACCOUNT = $SA`, `GCP_PROJECT = $PROJECT`
+  `GCP_SERVICE_ACCOUNT = $SA` (and variable `GCP_PROJECT = $PROJECT`)
 
 ### 2c. Azure (federated credential)
 ```bash
@@ -112,25 +116,27 @@ az ad app federated-credential create --id "$APP" --parameters '{
   "subject":"repo:OWNER/REPO:pull_request","audiences":["api://AzureADTokenExchange"]}'
 echo "AZURE_CLIENT_ID=$APP  AZURE_TENANT_ID=$(az account show --query tenantId -o tsv)  AZURE_SUBSCRIPTION_ID=$SUB"
 ```
-→ Vault keys `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
-  (in `secret/cluster-infra-mini/cloud`)
+→ GitHub secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
 
 ---
 
 ## 3. GitHub repo configuration
 
-Secrets live in **Vault**, not GitHub — load the cloud identifiers from steps 2a–2c
-into `secret/cluster-infra-mini/cloud` via [VAULT.md](VAULT.md) / `iac/vault/setup.sh`.
+The OIDC identifiers from §2 are stored as **GitHub Actions secrets**
+(`generate-credentials.sh` does this for you, or `gh secret set <NAME> --body ...`).
 
-**Settings → Secrets and variables → Actions → Secrets:** *(none — no cloud secrets
-in GitHub)*
+**Settings → Secrets and variables → Actions → Secrets:**
+
+| Secret | Source |
+|---|---|
+| `AWS_ROLE_ARN` | §2a |
+| `GCP_WIF_PROVIDER`, `GCP_SERVICE_ACCOUNT` | §2b |
+| `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | §2c (only if Azure enabled) |
 
 **…→ Variables:**
 
 | Variable | Example | Notes |
 |---|---|---|
-| `VAULT_ADDR` | `https://<cluster>.vault.<...>.hashicorp.cloud:8200` | the pipeline pulls secrets from here |
-| `VAULT_NAMESPACE` | `admin` | HCP Vault namespace |
 | `TF_STATE_BUCKET` | `fleet-mini-tfstate-ab12cd34` | step 1 |
 | `TF_BACKEND_REGION` | `us-east-1` | bucket region |
 | `AWS_REGION` | `us-east-1` | optional (defaults us-east-1) |
