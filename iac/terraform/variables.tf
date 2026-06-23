@@ -56,14 +56,12 @@ variable "aws_region" {
   default = "us-east-1"
 }
 variable "aws_node_instance_type" {
-  description = "Medium EKS managed node group instance type."
+  description = "EKS node type. 4 vCPU/16GB to fit the platform stack (Istio + CockroachDB + observability)."
   type        = string
-  default     = "t3.medium"
+  default     = "m5.xlarge"
 }
 
-# ---- GCP (GKE Autopilot) ----------------------------------------------------
-# Autopilot is regional and manages nodes itself, so there is no zone, node
-# count or machine type to configure for GKE.
+# ---- GCP (GKE Standard) -----------------------------------------------------
 variable "gcp_project" {
   description = "GCP project id (required when enable_gcp = true)."
   type        = string
@@ -79,9 +77,9 @@ variable "gcp_zone" {
   default     = "us-central1-a"
 }
 variable "gcp_node_machine_type" {
-  description = "Medium GKE node machine type."
+  description = "GKE node type. 4 vCPU/16GB to fit the platform stack (Istio + CockroachDB + observability)."
   type        = string
-  default     = "e2-medium"
+  default     = "e2-standard-4"
 }
 
 # ---- Azure (AKS) ------------------------------------------------------------
