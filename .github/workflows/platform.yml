@@ -43,11 +43,13 @@ jobs:
       # ---- tools ----
       - uses: azure/setup-kubectl@v4
       - uses: azure/setup-helm@v4
-      - name: Install istioctl
+      - name: Install istioctl (latest; supports values.global.platform=gke)
         run: |
           set -euo pipefail
-          curl -sL https://istio.io/downloadIstio | ISTIO_VERSION=$ISTIO_VERSION sh -
-          echo "$PWD/istio-$ISTIO_VERSION/bin" >> "$GITHUB_PATH"
+          curl -sL https://istio.io/downloadIstio | sh -
+          dir=$(ls -d istio-*/ | sort -V | tail -1)
+          echo "$PWD/${dir}bin" >> "$GITHUB_PATH"
+          "$PWD/${dir}bin/istioctl" version --remote=false
 
       # ---- auth + kubeconfig for BOTH clusters ----
       - name: Auth AWS (OIDC)
