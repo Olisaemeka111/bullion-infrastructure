@@ -5,9 +5,10 @@ name: deploy
 #   * merge to main              -> terraform apply (gated by the `production` env)
 #   * manual run (workflow_dispatch action=destroy) -> terraform destroy
 #
-# Secrets are managed in HashiCorp Vault and pulled via GitHub OIDC (no static
-# Vault token, no cloud keys in GitHub). Cloud auth itself stays keyless OIDC —
-# Vault just holds the identifiers. See VAULT.md + CICD.md for the one-time setup.
+# Cloud auth is keyless OIDC. The values below are non-secret OIDC IDENTIFIERS
+# (role ARN, WIF provider, etc.) stored as GitHub secrets/variables — the actual
+# credentials are short-lived tokens minted per run. Azure is gated by ENABLE_AZURE
+# (default false) until a subscription exists; flip it on + add the AZURE_* secrets.
 
 on:
   pull_request:
@@ -24,16 +25,21 @@ on:
         default: plan
 
 permissions:
-  id-token: write        # required for Vault OIDC + cloud OIDC
+  id-token: write        # required for cloud OIDC
   contents: read
   pull-requests: write   # required to comment the plan
 
 env:
   TF_IN_AUTOMATION: "true"
-  ARM_USE_OIDC: "true"
+  TF_VAR_gcp_project: ${{ vars.GCP_PROJECT }}
   TF_VAR_enable_aws: ${{ vars.ENABLE_AWS || 'true' }}
   TF_VAR_enable_gcp: ${{ vars.ENABLE_GCP || 'true' }}
-  TF_VAR_enable_azure: ${{ vars.ENABLE_AZURE || 'true' }}
+  TF_VAR_enable_azure: ${{ vars.ENABLE_AZURE || 'false' }}
+  # Azure (only used when ENABLE_AZURE=true; empty/ignored otherwise)
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
 jobs:
   # ---------------------------------------------------------------- PLAN -----
@@ -49,43 +55,25 @@ jobs:
         with:
           terraform_version: "1.11.4"
 
-      - name: Pull cloud identifiers from Vault (OIDC)
-        uses: hashicorp/vault-action@v3
-        with:
-          url: ${{ vars.VAULT_ADDR }}
-          namespace: ${{ vars.VAULT_NAMESPACE || 'admin' }}
-          method: jwt
-          role: github-actions
-          jwtGithubAudience: https://github.com/${{ github.repository_owner }}
-          exportToken: false
-          secrets: |
-            secret/data/cluster-infra-mini/cloud AWS_ROLE_ARN | AWS_ROLE_ARN ;
-            secret/data/cluster-infra-mini/cloud GCP_WIF_PROVIDER | GCP_WIF_PROVIDER ;
-            secret/data/cluster-infra-mini/cloud GCP_SERVICE_ACCOUNT | GCP_SERVICE_ACCOUNT ;
-            secret/data/cluster-infra-mini/cloud GCP_PROJECT | TF_VAR_gcp_project ;
-            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | AZURE_CLIENT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | ARM_CLIENT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | AZURE_TENANT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | ARM_TENANT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | AZURE_SUBSCRIPTION_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | ARM_SUBSCRIPTION_ID
-
       - name: Auth AWS (OIDC)
+        if: env.TF_VAR_enable_aws == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - name: Auth GCP (OIDC / Workload Identity Federation)
+        if: env.TF_VAR_enable_gcp == 'true'
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
-          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - name: Auth Azure (OIDC)
+        if: env.TF_VAR_enable_azure == 'true'
         uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Init
         run: |
@@ -134,39 +122,25 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.11.4"
-      - name: Pull cloud identifiers from Vault (OIDC)
-        uses: hashicorp/vault-action@v3
+      - name: Auth AWS (OIDC)
+        if: env.TF_VAR_enable_aws == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          url: ${{ vars.VAULT_ADDR }}
-          namespace: ${{ vars.VAULT_NAMESPACE || 'admin' }}
-          method: jwt
-          role: github-actions
-          jwtGithubAudience: https://github.com/${{ github.repository_owner }}
-          exportToken: false
-          secrets: |
-            secret/data/cluster-infra-mini/cloud AWS_ROLE_ARN | AWS_ROLE_ARN ;
-            secret/data/cluster-infra-mini/cloud GCP_WIF_PROVIDER | GCP_WIF_PROVIDER ;
-            secret/data/cluster-infra-mini/cloud GCP_SERVICE_ACCOUNT | GCP_SERVICE_ACCOUNT ;
-            secret/data/cluster-infra-mini/cloud GCP_PROJECT | TF_VAR_gcp_project ;
-            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | AZURE_CLIENT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | ARM_CLIENT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | AZURE_TENANT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | ARM_TENANT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | AZURE_SUBSCRIPTION_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | ARM_SUBSCRIPTION_ID
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
-      - uses: google-github-actions/auth@v2
+      - name: Auth GCP (OIDC / Workload Identity Federation)
+        if: env.TF_VAR_enable_gcp == 'true'
+        uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
-          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
-      - uses: azure/login@v2
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - name: Auth Azure (OIDC)
+        if: env.TF_VAR_enable_azure == 'true'
+        uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Init
         run: |
           terraform init \
@@ -194,39 +168,25 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.11.4"
-      - name: Pull cloud identifiers from Vault (OIDC)
-        uses: hashicorp/vault-action@v3
+      - name: Auth AWS (OIDC)
+        if: env.TF_VAR_enable_aws == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          url: ${{ vars.VAULT_ADDR }}
-          namespace: ${{ vars.VAULT_NAMESPACE || 'admin' }}
-          method: jwt
-          role: github-actions
-          jwtGithubAudience: https://github.com/${{ github.repository_owner }}
-          exportToken: false
-          secrets: |
-            secret/data/cluster-infra-mini/cloud AWS_ROLE_ARN | AWS_ROLE_ARN ;
-            secret/data/cluster-infra-mini/cloud GCP_WIF_PROVIDER | GCP_WIF_PROVIDER ;
-            secret/data/cluster-infra-mini/cloud GCP_SERVICE_ACCOUNT | GCP_SERVICE_ACCOUNT ;
-            secret/data/cluster-infra-mini/cloud GCP_PROJECT | TF_VAR_gcp_project ;
-            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | AZURE_CLIENT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_CLIENT_ID | ARM_CLIENT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | AZURE_TENANT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_TENANT_ID | ARM_TENANT_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | AZURE_SUBSCRIPTION_ID ;
-            secret/data/cluster-infra-mini/cloud AZURE_SUBSCRIPTION_ID | ARM_SUBSCRIPTION_ID
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
-      - uses: google-github-actions/auth@v2
+      - name: Auth GCP (OIDC / Workload Identity Federation)
+        if: env.TF_VAR_enable_gcp == 'true'
+        uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
-          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
-      - uses: azure/login@v2
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - name: Auth Azure (OIDC)
+        if: env.TF_VAR_enable_azure == 'true'
+        uses: azure/login@v2
         with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Init
         run: |
           terraform init \

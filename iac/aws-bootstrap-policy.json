@@ -1,0 +1,67 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TerraformStateBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:ListBucket",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:GetEncryptionConfiguration",
+        "s3:PutEncryptionConfiguration",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy",
+        "s3:GetBucketTagging",
+        "s3:PutBucketTagging"
+      ],
+      "Resource": "arn:aws:s3:::fleet-mini-tfstate*"
+    },
+    {
+      "Sid": "GitHubOidcProvider",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateOpenIDConnectProvider",
+        "iam:GetOpenIDConnectProvider",
+        "iam:ListOpenIDConnectProviders",
+        "iam:TagOpenIDConnectProvider"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageOnlyTheGhaRole",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies",
+        "iam:TagRole"
+      ],
+      "Resource": "arn:aws:iam::*:role/fleet-mini-gha"
+    },
+    {
+      "Sid": "OnlyAttachAdminToThatRole",
+      "Effect": "Deny",
+      "Action": "iam:AttachRolePolicy",
+      "Resource": "arn:aws:iam::*:role/fleet-mini-gha",
+      "Condition": {
+        "ArnNotEquals": {
+          "iam:PolicyARN": "arn:aws:iam::aws:policy/AdministratorAccess"
+        }
+      }
+    },
+    {
+      "Sid": "WhoAmI",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    }
+  ]
+}
