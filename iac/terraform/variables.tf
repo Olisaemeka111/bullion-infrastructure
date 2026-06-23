@@ -44,6 +44,11 @@ variable "enable_azure" {
   type    = bool
   default = true
 }
+variable "enable_cross_cloud" {
+  description = "Build the AWS<->GCP HA VPN (cross-cloud peering) for the central database fabric."
+  type        = bool
+  default     = false
+}
 
 # ---- AWS (EKS) --------------------------------------------------------------
 variable "aws_region" {

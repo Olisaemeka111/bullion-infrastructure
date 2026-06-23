@@ -46,6 +46,20 @@ module "gke" {
   labels       = var.tags
 }
 
+# ---- Cross-cloud private connectivity (AWS <-> GCP HA VPN + BGP) ------------
+# The private substrate that joins the two clouds into one fabric (needed for the
+# central CockroachDB). Requires both AWS + GCP enabled. Off by default.
+module "cross_cloud" {
+  source = "./modules/cross_cloud"
+  count  = (var.enable_aws && var.enable_gcp && var.enable_cross_cloud) ? 1 : 0
+
+  name_prefix         = "${var.name_prefix}-xc"
+  aws_vpc_id          = module.eks[0].vpc_id
+  aws_route_table_ids = module.eks[0].private_route_table_ids
+  gcp_network         = module.gke[0].network_id
+  gcp_region          = var.gcp_region
+}
+
 # ---- Azure : Azure AKS ------------------------------------------------------
 # Re-enable together with the azurerm provider above once you have an Azure
 # subscription + the AZURE_* GitHub secrets, then set ENABLE_AZURE=true.
