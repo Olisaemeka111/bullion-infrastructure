@@ -69,7 +69,7 @@ resource "aws_security_group_rule" "from_gke" {
   from_port         = 0
   to_port           = 65535
   cidr_blocks       = [var.gke_subnet_cidr, var.gke_pods_cidr]
-  description       = "Cross-cloud: GKE pods/nodes -> EKS nodes (CockroachDB :26257 etc.)"
+  description       = "Cross-cloud GKE pods/nodes to EKS nodes (CockroachDB 26257)"
 }
 
 # ---- AWS: VPN gateway attached to the EKS VPC ----
