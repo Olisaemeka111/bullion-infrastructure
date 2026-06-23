@@ -1,18 +1,14 @@
-"""GCP backend — managed Kubernetes (Google GKE, Autopilot mode).
+"""GCP backend — managed Kubernetes (Google GKE Standard).
 
-Mini deployment: a GKE Autopilot cluster — Google fully manages the node fleet
-(no node pool / machine type / count); nodes are provisioned automatically from
-Pod resource requests. VPC-native networking with a dedicated VPC + subnet and
-Dataplane V2 (eBPF). The actual cloud resources are in
-`iac/terraform/modules/gke`.
-
-Note: the offline control-plane simulation still models a small pool of nodes for
-GCP so the same reconcile/self-heal logic is exercised uniformly across clouds;
-in the real GCP deployment that node management is delegated to Autopilot."""
+Mini deployment: a zonal GKE Standard cluster with a node pool of 2 medium nodes
+(e2-medium). Standard mode (not Autopilot) gives node-level control needed for
+self-managed Istio, the node-exporter DaemonSet, and self-hosted CockroachDB.
+VPC-native networking with a dedicated VPC + subnet. The actual cloud resources
+are in `iac/terraform/modules/gke`."""
 from ._simbase import SimProvider
 
 
 class GCPProvider(SimProvider):
     name = "gcp"
-    network_primitive = "vpc-native+gke-autopilot"
+    network_primitive = "vpc-native+gke-node-pool"
     iam_model = "workload-identity"

@@ -34,16 +34,18 @@ module "eks" {
   tags               = var.tags
 }
 
-# ---- GCP : Google GKE (Autopilot) ------------------------------------------
-# Autopilot manages the node fleet automatically (no node_count / machine type).
+# ---- GCP : Google GKE (Standard) -------------------------------------------
 module "gke" {
   source = "./modules/gke"
   count  = var.enable_gcp ? 1 : 0
 
-  cluster_name = "${var.name_prefix}-gke"
-  project      = var.gcp_project
-  region       = var.gcp_region
-  labels       = var.tags
+  cluster_name      = "${var.name_prefix}-gke"
+  project           = var.gcp_project
+  region            = var.gcp_region
+  zone              = var.gcp_zone
+  node_count        = var.node_count
+  node_machine_type = var.gcp_node_machine_type
+  labels            = var.tags
 }
 
 # ---- Cross-cloud private connectivity (AWS <-> GCP HA VPN + BGP) ------------

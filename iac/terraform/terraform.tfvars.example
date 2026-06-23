@@ -10,11 +10,12 @@ enable_aws             = true
 aws_region             = "us-east-1"
 aws_node_instance_type = "t3.medium"
 
-# ---- GCP (GKE Autopilot) ----  (gcp_project is REQUIRED when enable_gcp = true)
-# Autopilot manages nodes automatically — no node count / machine type here.
-enable_gcp  = true
-gcp_project = "my-gcp-project-id"
-gcp_region  = "us-central1"
+# ---- GCP (GKE Standard) ----  (gcp_project is REQUIRED when enable_gcp = true)
+enable_gcp            = true
+gcp_project           = "my-gcp-project-id"
+gcp_region            = "us-central1"
+gcp_zone              = "us-central1-a"   # zonal cluster => exactly node_count nodes
+gcp_node_machine_type = "e2-medium"
 
 # ---- Azure (AKS) ----  (disabled: needs a subscription + uncommenting the
 # azurerm provider/module in main.tf — see comments there)

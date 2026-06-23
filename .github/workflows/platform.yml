@@ -31,7 +31,7 @@ env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   EKS_NAME: bullion-eks
   GKE_NAME: bullion-gke
-  GKE_LOCATION: ${{ vars.GCP_REGION || 'us-central1' }}
+  GKE_LOCATION: ${{ vars.GCP_ZONE || 'us-central1-a' }}
 
 jobs:
   platform:
@@ -96,9 +96,8 @@ jobs:
               --dry-run=client -o yaml | kubectl --context "$ctx" apply -f -
           done
           istioctl install -y --context eks -f mesh/install/iop-eks.yaml
-          # GKE Autopilot needs the CNI + gke platform flag (no privileged init containers)
-          istioctl install -y --context gke -f mesh/install/iop-gke.yaml \
-            --set values.global.platform=gke --set components.cni.enabled=true --set components.cni.namespace=kube-system
+          # GKE Standard installs like any cluster (no Autopilot platform flags)
+          istioctl install -y --context gke -f mesh/install/iop-gke.yaml
           kubectl --context eks apply -n istio-system -f mesh/install/expose-services.yaml
           kubectl --context gke apply -n istio-system -f mesh/install/expose-services.yaml
 

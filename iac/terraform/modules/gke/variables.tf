@@ -1,4 +1,5 @@
-# GKE Autopilot needs no node_count / machine_type / zone — Google manages nodes.
+# GKE Standard: explicit node pool (count + machine type), zonal for an exact
+# total node count.
 
 variable "cluster_name" {
   type = string
@@ -9,6 +10,18 @@ variable "project" {
 }
 
 variable "region" {
+  type = string
+}
+
+variable "zone" {
+  type = string
+}
+
+variable "node_count" {
+  type = number
+}
+
+variable "node_machine_type" {
   type = string
 }
 

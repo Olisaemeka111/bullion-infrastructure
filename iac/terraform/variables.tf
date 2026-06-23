@@ -73,6 +73,16 @@ variable "gcp_region" {
   type    = string
   default = "us-central1"
 }
+variable "gcp_zone" {
+  description = "Zone for the zonal GKE Standard cluster (exact total node count)."
+  type        = string
+  default     = "us-central1-a"
+}
+variable "gcp_node_machine_type" {
+  description = "Medium GKE node machine type."
+  type        = string
+  default     = "e2-medium"
+}
 
 # ---- Azure (AKS) ------------------------------------------------------------
 variable "azure_location" {

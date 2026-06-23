@@ -18,10 +18,10 @@ output "gke" {
   description = "GKE Autopilot cluster details + kubeconfig command."
   value = var.enable_gcp ? {
     cluster_name = module.gke[0].cluster_name
-    mode         = "autopilot"
-    location     = var.gcp_region
+    mode         = "standard"
+    location     = var.gcp_zone
     endpoint     = module.gke[0].cluster_endpoint
-    kubeconfig   = "gcloud container clusters get-credentials ${module.gke[0].cluster_name} --region ${var.gcp_region} --project ${var.gcp_project}"
+    kubeconfig   = "gcloud container clusters get-credentials ${module.gke[0].cluster_name} --zone ${var.gcp_zone} --project ${var.gcp_project}"
   } : null
   sensitive = true
 }

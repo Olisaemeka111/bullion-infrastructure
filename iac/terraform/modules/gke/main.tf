@@ -1,11 +1,9 @@
 ###############################################################################
-# GCP — Google GKE in AUTOPILOT mode.
-# In Autopilot, Google fully manages the node fleet: there is no node pool,
-# machine type or node count to set — nodes are provisioned automatically from
-# Pod resource requests and you are billed per Pod resources. This is the
-# recommended hands-off managed option.
-# Networking: a dedicated VPC-native network + subnet with secondary ranges for
-# pods and services (alias IP). Autopilot uses Dataplane V2 (eBPF) by default.
+# GCP — Google GKE Standard (zonal, so node_count is the exact total node count)
+# with a separately-managed node pool of `node_count` medium nodes. Standard mode
+# (not Autopilot) gives node-level control needed for self-managed Istio, the
+# node-exporter DaemonSet, and self-hosted CockroachDB.
+# Networking: dedicated VPC-native network + subnet with secondary ranges.
 ###############################################################################
 
 resource "google_compute_network" "vpc" {
@@ -31,9 +29,10 @@ resource "google_compute_subnetwork" "subnet" {
 
 resource "google_container_cluster" "primary" {
   name     = var.cluster_name
-  location = var.region # Autopilot clusters are regional
+  location = var.zone # zonal => node_count nodes total (not per-zone)
 
-  enable_autopilot = true
+  remove_default_node_pool = true
+  initial_node_count       = 1
 
   network    = google_compute_network.vpc.id
   subnetwork = google_compute_subnetwork.subnet.id
@@ -44,8 +43,30 @@ resource "google_container_cluster" "primary" {
   }
 
   release_channel {
-    channel = "REGULAR" # required for Autopilot; manages the K8s version
+    channel = "REGULAR"
+  }
+  deletion_protection = false
+}
+
+resource "google_container_node_pool" "primary" {
+  name       = "default"
+  location   = var.zone
+  cluster    = google_container_cluster.primary.name
+  node_count = var.node_count
+
+  node_config {
+    machine_type = var.node_machine_type
+    disk_size_gb = 50
+    oauth_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+    labels       = var.labels
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
   }
 
-  deletion_protection = false
+  management {
+    auto_repair  = true
+    auto_upgrade = true
+  }
 }
