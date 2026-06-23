@@ -140,14 +140,19 @@
     <li>An Istio <b>multi-primary</b> service mesh joining both clusters across clouds (mTLS).</li>
     <li><b>Active-active load balancing</b> of a global service across both clouds, with
     automatic failover (outlier ejection).</li>
+    <li>A <b>cross-cloud private network</b> (AWS↔GCP HA VPN + BGP, 4 tunnels) — live.</li>
+    <li>A <b>central distributed database</b> (CockroachDB multi-region, 4 nodes across both
+    clouds over the VPN), deployed via CI/CD.</li>
+    <li>A real <b>global active-active application</b> (the board game) built from source to GHCR
+    and served from both clouds behind public ingress LoadBalancers.</li>
     <li>Full <b>CI/CD</b> (GitHub Actions) with keyless OIDC auth and approval gates.</li>
     <li>Centralised <b>observability</b> (Prometheus/Grafana).</li>
   </ul>
   <h3>On the roadmap</h3>
   <ul>
-    <li>Cross-cloud private network (AWS↔GCP VPN) — built, awaiting enablement.</li>
-    <li><b>Central distributed database</b> (CockroachDB multi-region) — design + manifests ready.</li>
-    <li>In-cluster control-plane/dashboard and global DNS load balancing.</li>
+    <li>In-cluster control-plane/dashboard (the agentic reconciler running on-cluster).</li>
+    <li>A single global DNS endpoint (one hostname) fronting both ingresses — optional.</li>
+    <li>Production hardening: CockroachDB TLS, least-privilege IAM, private GKE endpoint.</li>
   </ul>
   <div class="callout note"><b>Commercial note.</b> The environment currently runs on a GCP
   free trial and a pay-as-you-go AWS account for validation. Production hardening (least-
@@ -341,19 +346,20 @@
     offline dashboard (§10).</p></div>
   </div>
 
-  <div class="sec-head" style="margin-top:18px"><span class="sec-num" style="background:var(--data)">9</span><h2>Data layer — CockroachDB (planned)</h2></div>
-  <div class="lead">Active-active <i>traffic</i> needs active-active <i>data</i>. The design uses a
-  distributed multi-master database so every cloud can read and write and survive a region loss.</div>
+  <div class="sec-head" style="margin-top:18px"><span class="sec-num" style="background:var(--data)">9</span><h2>Data layer — CockroachDB (deployed)</h2></div>
+  <div class="lead">Active-active <i>traffic</i> needs active-active <i>data</i>. A distributed
+  multi-master database lets every cloud read and write and survive a region loss.</div>
   <table>
-    <tr><th>Aspect</th><th>Plan</th></tr>
-    <tr><td>Engine</td><td>CockroachDB, one StatefulSet per cluster, joined into one logical DB</td></tr>
-    <tr><td>Placement</td><td><code>--locality cloud=aws|gcp</code>; replicas spread across clouds; <code>SURVIVE REGION FAILURE</code></td></tr>
-    <tr><td>Connectivity</td><td>node-to-node (:26257) over the AWS↔GCP <b>VPN</b> (cross_cloud module)</td></tr>
-    <tr><td>Status</td><td><span class="wait">manifests ready (mesh/data/); VPN built but gated off; not yet deployed</span></td></tr>
+    <tr><th>Aspect</th><th>Implementation</th></tr>
+    <tr><td>Engine</td><td>CockroachDB <code>v24.3.5</code> as a <b>DaemonSet</b> (one node per K8s node) joined into one logical DB</td></tr>
+    <tr><td>Networking</td><td><code>hostNetwork</code> — each node advertises its routable <b>node IP</b> (pod IPs aren't routable cross-cloud)</td></tr>
+    <tr><td>Connectivity</td><td>node-to-node (:26257) over the AWS↔GCP <b>HA VPN</b> (cross_cloud module); <code>--join</code> built from live node IPs</td></tr>
+    <tr><td>Deployment</td><td>CI/CD via <code>database.yml</code> (discovers node IPs → applies to both clusters → <code>init</code> once)</td></tr>
+    <tr><td>Status</td><td><span class="ok">LIVE — 4 nodes across both clouds (2 EKS + 2 GKE)</span></td></tr>
   </table>
-  <div class="callout info"><b>Prerequisite.</b> Enable the cross-cloud VPN first, then deploy
-  CockroachDB. This is the most complex remaining item (cross-cloud stateful quorum) and is
-  expected to need iterative validation.</div>
+  <div class="callout info"><b>Hardening.</b> The cross-cloud VPN is up and the cluster is live in
+  <b>insecure</b> mode for this validation; enabling TLS (cert-manager / <code>cockroach cert</code>)
+  is the production-hardening step.</div>
 </section>
 
 <!-- 10. CONTROL PLANE -->
@@ -424,11 +430,13 @@ kubectl --context eks -n demo exec curl -c curl -- sh -c \
     <tr><td>EKS + GKE provisioned (IaC + CI/CD)</td><td class="ok">✓ live</td></tr>
     <tr><td>Istio multi-primary mesh — clusters joined</td><td class="ok">✓ live</td></tr>
     <tr><td>Active-active cross-cloud load balancing</td><td class="ok">✓ verified</td></tr>
+    <tr><td>North-south ingress gateways (public LB :80)</td><td class="ok">✓ live</td></tr>
+    <tr><td>Board game — global active-active app (GHCR → both clouds)</td><td class="ok">✓ live</td></tr>
     <tr><td>Observability (Prometheus/Grafana)</td><td class="ok">✓ live</td></tr>
-    <tr><td>Cross-cloud VPN (AWS↔GCP)</td><td class="wait">built, gated off</td></tr>
-    <tr><td>Central CockroachDB (multi-region)</td><td class="wait">manifests ready</td></tr>
+    <tr><td>Cross-cloud VPN (AWS↔GCP)</td><td class="ok">✓ live (4 tunnels)</td></tr>
+    <tr><td>Central CockroachDB (multi-region, via CI/CD)</td><td class="ok">✓ live — 4 nodes</td></tr>
     <tr><td>In-cluster control plane + dashboard</td><td class="wait">planned</td></tr>
-    <tr><td>Global DNS (north-south LB)</td><td class="wait">module built</td></tr>
+    <tr><td>Global DNS (single-endpoint north-south LB)</td><td class="wait">module built (optional)</td></tr>
   </table>
 
   <div class="sec-head" style="margin-top:14px"><span class="sec-num" style="background:var(--ink)">15</span><h2>Cost</h2></div>

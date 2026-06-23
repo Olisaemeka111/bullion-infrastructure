@@ -225,10 +225,12 @@ for i in $(seq 20); do curl -s hello.demo.svc.cluster.local; done
     <tr><td>9</td><td>Join clusters (CA + east-west + remote secrets + network labels)</td><td class="ok">✓</td></tr>
     <tr><td>10</td><td>Global app + active-active 50/50 load balancing</td><td class="ok">✓ verified</td></tr>
     <tr><td>11</td><td>Observability (Prometheus/Grafana on EKS)</td><td class="ok">✓</td></tr>
-    <tr><td>12</td><td>Cross-cloud VPN module (AWS↔GCP HA VPN + BGP)</td><td class="wait">built, gated off</td></tr>
-    <tr><td>13</td><td>CockroachDB central DB (multi-region over VPN)</td><td class="wait">manifests only</td></tr>
-    <tr><td>14</td><td>Control-plane container (agentic reconciler + dashboard)</td><td class="wait">pending</td></tr>
-    <tr><td>15</td><td>Global DNS (north-south LB)</td><td class="wait">module built</td></tr>
+    <tr><td>12</td><td>Cross-cloud VPN (AWS↔GCP HA VPN + BGP)</td><td class="ok">✓ live (4 tunnels)</td></tr>
+    <tr><td>13</td><td>CockroachDB central DB (multi-region over VPN, via CI/CD)</td><td class="ok">✓ live — 4 nodes</td></tr>
+    <tr><td>14</td><td>North-south ingress gateways (public LB :80)</td><td class="ok">✓ live</td></tr>
+    <tr><td>15</td><td>Board game — global active-active app (GHCR → both clouds)</td><td class="ok">✓ live</td></tr>
+    <tr><td>16</td><td>Control-plane container (agentic reconciler + dashboard)</td><td class="wait">pending</td></tr>
+    <tr><td>17</td><td>Global DNS (single-endpoint north-south LB)</td><td class="wait">module built (optional)</td></tr>
   </table>
   <h3>Notable blockers resolved</h3>
   <table>
@@ -251,10 +253,12 @@ for i in $(seq 20); do curl -s hello.demo.svc.cluster.local; done
   <div class="grid2">
     <div class="card cicd"><h4>✓ Live now</h4>
       <p>EKS + GKE; Istio multi-primary mesh (joined); global app with active-active
-      cross-cloud LB; observability on EKS; full CI/CD with OIDC + gated approvals.</p></div>
-    <div class="card pending"><h4>⏳ Pending</h4>
-      <p>Cross-cloud VPN (gated off); central <b>CockroachDB</b> (needs VPN first);
-      control-plane container; global DNS (north-south).</p></div>
+      cross-cloud LB; <b>cross-cloud VPN</b> (4 tunnels); central <b>CockroachDB</b>
+      (4 nodes, via CI/CD); north-south ingress gateways + the <b>board game</b>
+      served from both clouds; observability on EKS; full CI/CD with OIDC + gated approvals.</p></div>
+    <div class="card pending"><h4>⏳ Pending (optional)</h4>
+      <p>In-cluster control-plane container; single global DNS endpoint (north-south);
+      production hardening (CockroachDB TLS, least-privilege IAM, private GKE endpoint).</p></div>
   </div>
   <h3>Operate</h3>
   <pre><span class="m"># access</span>

@@ -8,20 +8,20 @@ cloud:
 
 | Cloud | Managed service | Nodes | Size |
 |---|---|---|---|
-| AWS | **EKS** (managed node group) | 2 | `t3.medium` |
-| GCP | **GKE Autopilot** | auto (Google-managed) | n/a |
-| Azure | **AKS** (default node pool) | 2 | `Standard_D2s_v3` |
+| AWS | **EKS** (managed node group) | 2 | `m5.xlarge` |
+| GCP | **GKE Standard** (zonal, private nodes) | 2 | `e2-standard-4` |
+| Azure | **AKS** (optional — disabled by default) | 2 | `Standard_D2s_v3` |
 
 The Python control plane is **identical in design** to the reference project and
 runs fully offline (simulated providers) to prove the lifecycle logic before you
 spend a cent. The `iac/terraform/` tree is **real, `terraform validate`-clean
 HCL** that provisions the managed clusters + networking for actual cloud testing.
 
-The three clusters are **joined into one active-active fabric** (`mesh/`): all
-clouds serve traffic at once, and on a cloud outage traffic redistributes to the
-survivors automatically — Istio multi-primary (east-west) + global DNS
-(north-south) + CockroachDB (multi-master data). The Python node **agent** and
-**per-node observability** stay in place across all three clouds.
+The clusters are **joined into one active-active fabric** (`mesh/`): both clouds
+serve traffic at once, and on a cloud outage traffic redistributes to the survivor
+automatically — Istio multi-primary (east-west + north-south ingress) +
+CockroachDB (multi-master data over an AWS↔GCP VPN) + optional global DNS. The
+Python node **agent** and **per-node observability** stay in place across clouds.
 
 ## Two layers, one model
 
@@ -33,7 +33,7 @@ survivors automatically — Istio multi-primary (east-west) + global DNS
             └─────────────────────────────────────────────┘
                          declares the same fleet
             ┌─────────────────────────────────────────────┐
- real       │  iac/terraform  →  EKS + GKE Autopilot + AKS │   terraform apply
+ real       │  iac/terraform  →  EKS + GKE Standard (+AKS) │   terraform apply
  (deploys   │  per-cloud VPC/VNet + subnets + node pools   │   kubectl get nodes
   to cloud) └─────────────────────────────────────────────┘
 ```
@@ -44,10 +44,11 @@ control_plane/  providers/  agent/  security/  networking/  workflows/
 observability/  tests/  sim/  cli.py            # same design as cluster-infra
 iac/terraform/                                   # REAL deployable IaC
   main.tf versions.tf variables.tf outputs.tf terraform.tfvars.example
-  modules/eks/   (terraform-aws-modules VPC + EKS, 2x t3.medium)
-  modules/gke/   (GKE Autopilot, VPC-native)
-  modules/aks/   (VNet + AKS, 2x Standard_D2s_v3)
-  modules/global_dns/  (Route53 active-active across the 3 ingresses)
+  modules/eks/   (terraform-aws-modules VPC + EKS, 2x m5.xlarge)
+  modules/gke/   (GKE Standard zonal, private nodes + Cloud NAT, VPC-native)
+  modules/aks/   (VNet + AKS, 2x Standard_D2s_v3 — optional, off by default)
+  modules/cross_cloud/ (AWS<->GCP HA VPN + BGP for the central database)
+  modules/global_dns/  (Route53 active-active across the ingresses)
 iac/atlantis.yaml                                # PR-driven plan/apply
 mesh/                                            # ACTIVE-ACTIVE fabric (joins the 3 clusters)
   install/    Istio multi-primary (shared CA, east-west gateways, remote secrets)
@@ -84,8 +85,8 @@ terraform init
 terraform plan
 terraform apply
 # then use the printed kubeconfig commands, e.g.:
-aws eks update-kubeconfig --region us-east-1 --name fleet-mini-eks
-kubectl get nodes -o wide                        # 2 Ready t3.medium nodes
+aws eks update-kubeconfig --region us-east-1 --name bullion-eks
+kubectl get nodes -o wide                        # 2 Ready m5.xlarge nodes
 ```
 Each cloud has an `enable_<cloud>` switch so you can deploy **one at a time** to
 limit cost. Tear everything down with `terraform destroy`.
@@ -113,27 +114,28 @@ networking fabric and operational runbook are unchanged — see the copied
 
 | Aspect | cluster-infra (reference) | cluster-infra-mini (this) |
 |---|---|---|
-| Scale | up to 10,000 simulated nodes | 2 medium nodes per cloud (real) |
-| Backends | aws/gcp/azure/bare-metal (simulated) | EKS / GKE Autopilot / AKS (real IaC) |
+| Scale | up to 10,000 simulated nodes | 2× 4-vCPU nodes per cloud (real) |
+| Backends | aws/gcp/azure/bare-metal (simulated) | EKS / GKE Standard (+ optional AKS), real IaC |
 | IaC | illustrative stubs | real, `validate`-clean, deployable |
 | Purpose | prove design at scale, offline | test an actual cloud deployment |
 | Control plane | identical | identical |
 | Tests | 74, all green | 74, all green |
 
 ## Active-active, not backup
-All three clouds serve traffic concurrently and the fleet behaves as one:
+Both clouds serve traffic concurrently and the fleet behaves as one:
 - **East-west** (service→service): Istio multi-primary *global services* with
   locality-aware load balancing + outlier-detection failover (`mesh/`).
-- **North-south** (user→app): global DNS across all 3 ingresses, health-checked
-  (`iac/terraform/modules/global_dns`).
+- **North-south** (user→app): each cluster's Istio ingress gateway serves the app
+  (the board game); an optional global DNS layer
+  (`iac/terraform/modules/global_dns`) fronts both ingresses health-checked.
 - **Data**: CockroachDB multi-region, every cloud read+write, survives region loss.
-- **On a cloud outage** traffic redistributes to the survivors automatically and
+- **On a cloud outage** traffic redistributes to the survivor automatically and
   rebalances on recovery — modeled and tested offline by `sim.active_active` +
   `networking/global_lb.py` (`GlobalTrafficDirector`).
 
 The Python **node agent** (bootstrap/attest/health/drain) and **per-node
 observability** (node-exporter DaemonSet + Istio signals + control-plane
-telemetry) remain across all three clouds — see `mesh/observability/`.
+telemetry) remain across both clouds — see `mesh/observability/`.
 
 ## Status (verified)
 - **Tests: 80, all green** (`smoke 8 + unit 43 + integration 24 + chaos 5`).
@@ -143,5 +145,6 @@ telemetry) remain across all three clouds — see `mesh/observability/`.
 - **IaC valid** — `terraform validate` → "Success!"; `terraform fmt` clean;
   `terraform init` resolves all providers/modules.
 
-> Cloud resources cost money. Always `terraform destroy` after testing. GKE
-> Autopilot bills per Pod resource request; EKS/AKS bill per node + control plane.
+> Cloud resources cost money. Always `terraform destroy` after testing. EKS and
+> GKE Standard bill per node + control plane; the cross-cloud VPN + LoadBalancers
+> add a little more.
