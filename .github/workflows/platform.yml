@@ -85,14 +85,17 @@ jobs:
         run: |
           set -euo pipefail
           cd mesh/install && bash gen-ca.sh && cd -
-          for pair in "eks:eks" "gke:gke"; do
-            c="${pair%%:*}"; ctx="${pair##*:}"
+          # ctx:network — the topology.istio.io/network label is REQUIRED for
+          # multi-network endpoint discovery (without it traffic stays cluster-local).
+          for pair in "eks:network-aws" "gke:network-gcp"; do
+            ctx="${pair%%:*}"; net="${pair##*:}"
             kubectl --context "$ctx" create namespace istio-system --dry-run=client -o yaml | kubectl --context "$ctx" apply -f -
+            kubectl --context "$ctx" label namespace istio-system topology.istio.io/network=$net --overwrite
             kubectl --context "$ctx" -n istio-system create secret generic cacerts \
-              --from-file=mesh/install/certs/$c/ca-cert.pem \
-              --from-file=mesh/install/certs/$c/ca-key.pem \
-              --from-file=mesh/install/certs/$c/root-cert.pem \
-              --from-file=mesh/install/certs/$c/cert-chain.pem \
+              --from-file=mesh/install/certs/$ctx/ca-cert.pem \
+              --from-file=mesh/install/certs/$ctx/ca-key.pem \
+              --from-file=mesh/install/certs/$ctx/root-cert.pem \
+              --from-file=mesh/install/certs/$ctx/cert-chain.pem \
               --dry-run=client -o yaml | kubectl --context "$ctx" apply -f -
           done
           istioctl install -y --context eks -f mesh/install/iop-eks.yaml

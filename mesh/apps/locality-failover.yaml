@@ -19,19 +19,21 @@ spec:
       tcp:
         maxConnections: 1000
     loadBalancer:
-      simple: LEAST_REQUEST
+      simple: ROUND_ROBIN
+      # Explicit 50/50 split across the two cloud regions (active-active), so traffic
+      # from either region is balanced across both clusters rather than prefer-local.
+      # outlierDetection ejects a failed region -> traffic redistributes (failover).
       localityLbSetting:
         enabled: true
-        # 50/50 across the two clouds, regardless of where the request originates
         distribute:
-          - from: "network-aws/*"
+          - from: us-east-1/*
             to:
-              "network-aws/*": 50
-              "network-gcp/*": 50
-          - from: "network-gcp/*"
+              "us-east-1/*": 50
+              "us-central1/*": 50
+          - from: us-central1/*
             to:
-              "network-aws/*": 50
-              "network-gcp/*": 50
+              "us-east-1/*": 50
+              "us-central1/*": 50
     outlierDetection:
       consecutive5xxErrors: 3
       interval: 5s
