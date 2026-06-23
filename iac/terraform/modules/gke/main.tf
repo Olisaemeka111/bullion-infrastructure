@@ -27,6 +27,22 @@ resource "google_compute_subnetwork" "subnet" {
   }
 }
 
+# Cloud NAT so private nodes (no public IP) can still pull images / reach the
+# internet. Keeps us under the GCP free-trial IN_USE_ADDRESSES quota.
+resource "google_compute_router" "nat" {
+  name    = "${var.cluster_name}-nat-router"
+  region  = var.region
+  network = google_compute_network.vpc.id
+}
+
+resource "google_compute_router_nat" "nat" {
+  name                               = "${var.cluster_name}-nat"
+  router                             = google_compute_router.nat.name
+  region                             = var.region
+  nat_ip_allocate_option             = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+}
+
 resource "google_container_cluster" "primary" {
   name     = var.cluster_name
   location = var.zone # zonal => node_count nodes total (not per-zone)
@@ -40,6 +56,14 @@ resource "google_container_cluster" "primary" {
   ip_allocation_policy {
     cluster_secondary_range_name  = "pods"
     services_secondary_range_name = "services"
+  }
+
+  # Private nodes (no public IP) — fits the free-trial IP quota; egress via NAT.
+  # Public control-plane endpoint kept so CI + your laptop can reach the API.
+  private_cluster_config {
+    enable_private_nodes    = true
+    enable_private_endpoint = false
+    master_ipv4_cidr_block  = "172.16.0.0/28"
   }
 
   release_channel {
