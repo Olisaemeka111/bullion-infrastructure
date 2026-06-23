@@ -91,6 +91,42 @@ jobs:
           set -o pipefail
           terraform plan -input=false -out=tfplan -no-color | tee plan.txt
 
+      - name: Plan summary (resources to be created)
+        shell: bash
+        run: |
+          terraform show -json tfplan > plan.json
+          c=$(jq -r '[.resource_changes[]|select(.change.actions==["create"])]|length' plan.json)
+          u=$(jq -r '[.resource_changes[]|select(.change.actions==["update"])]|length' plan.json)
+          r=$(jq -r '[.resource_changes[]|select((.change.actions|sort)==["create","delete"])]|length' plan.json)
+          d=$(jq -r '[.resource_changes[]|select(.change.actions==["delete"])]|length' plan.json)
+          {
+            echo "## Terraform plan summary"
+            echo ""
+            echo "| Action | Count |"
+            echo "|---|---:|"
+            echo "| create  | $c |"
+            echo "| update  | $u |"
+            echo "| replace | $r |"
+            echo "| destroy | $d |"
+            echo ""
+            echo "<details open><summary><b>Resources to create ($c)</b></summary>"
+            echo ""
+            jq -r '.resource_changes[]|select(.change.actions==["create"])|"- `\(.address)`  _( \(.type) )_"' plan.json
+            echo ""
+            echo "</details>"
+            if [ "$u" != "0" ]; then
+              echo ""; echo "<details><summary><b>Resources to update ($u)</b></summary>"; echo ""
+              jq -r '.resource_changes[]|select(.change.actions==["update"])|"- `\(.address)`"' plan.json
+              echo ""; echo "</details>"
+            fi
+            if [ "$r" != "0" ] || [ "$d" != "0" ]; then
+              echo ""; echo "<details><summary><b>Resources to replace/destroy ($((r+d)))</b></summary>"; echo ""
+              jq -r '.resource_changes[]|select(.change.actions|index("delete"))|"- `\(.address)`"' plan.json
+              echo ""; echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Plan: $c to create, $u to update, $r to replace, $d to destroy"
+
       - name: Upload plan
         uses: actions/upload-artifact@v4
         with:
