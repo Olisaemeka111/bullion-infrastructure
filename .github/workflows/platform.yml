@@ -1,0 +1,143 @@
+name: platform
+
+# Installs the PLATFORM layer onto the already-provisioned clusters (run after the
+# `deploy` workflow has created bullion-eks + bullion-gke):
+#   1. mesh join     — Istio multi-primary across both clusters (active-active)
+#   2. app           — global active-active sample service + locality failover
+#   3. observability — kube-prometheus-stack + node-exporter on EKS
+#                      (GKE Autopilot uses Google Managed Prometheus)
+#
+# Auth is keyless OIDC; the CI identities are already cluster-admin on both
+# clusters. Gated by the `production` environment (it provisions LoadBalancers).
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: "What to install"
+        type: choice
+        options: [all, mesh, app, observability]
+        default: all
+  push:
+    branches: [main]
+    paths: ["mesh/**", ".github/workflows/platform.yml"]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ISTIO_VERSION: "1.24.2"
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  EKS_NAME: bullion-eks
+  GKE_NAME: bullion-gke
+  GKE_LOCATION: ${{ vars.GCP_REGION || 'us-central1' }}
+
+jobs:
+  platform:
+    runs-on: ubuntu-latest
+    environment: production      # approval gate (creates LBs)
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- tools ----
+      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-helm@v4
+      - name: Install istioctl
+        run: |
+          set -euo pipefail
+          curl -sL https://istio.io/downloadIstio | ISTIO_VERSION=$ISTIO_VERSION sh -
+          echo "$PWD/istio-$ISTIO_VERSION/bin" >> "$GITHUB_PATH"
+
+      # ---- auth + kubeconfig for BOTH clusters ----
+      - name: Auth AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: EKS kubeconfig (context 'eks')
+        run: aws eks update-kubeconfig --name "$EKS_NAME" --region "$AWS_REGION" --alias eks
+
+      - name: Auth GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - name: GKE kubeconfig
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_NAME }}
+          location: ${{ env.GKE_LOCATION }}
+      - name: Normalize GKE context to 'gke'
+        run: |
+          set -euo pipefail
+          ctx=$(kubectl config get-contexts -o name | grep "$GKE_NAME" | head -1)
+          kubectl config rename-context "$ctx" gke
+          kubectl config get-contexts
+
+      # ---- 1. MESH JOIN (Istio multi-primary) ----
+      - name: Mesh — shared CA + istiod + east-west gateway
+        if: github.event.inputs.component == 'all' || github.event.inputs.component == 'mesh' || github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          cd mesh/install && ./gen-ca.sh && cd -
+          for pair in "eks:eks" "gke:gke"; do
+            c="${pair%%:*}"; ctx="${pair##*:}"
+            kubectl --context "$ctx" create namespace istio-system --dry-run=client -o yaml | kubectl --context "$ctx" apply -f -
+            kubectl --context "$ctx" -n istio-system create secret generic cacerts \
+              --from-file=mesh/install/certs/$c/ca-cert.pem \
+              --from-file=mesh/install/certs/$c/ca-key.pem \
+              --from-file=mesh/install/certs/$c/root-cert.pem \
+              --from-file=mesh/install/certs/$c/cert-chain.pem \
+              --dry-run=client -o yaml | kubectl --context "$ctx" apply -f -
+          done
+          istioctl install -y --context eks -f mesh/install/iop-eks.yaml
+          # GKE Autopilot needs the CNI + gke platform flag (no privileged init containers)
+          istioctl install -y --context gke -f mesh/install/iop-gke.yaml \
+            --set values.global.platform=gke --set components.cni.enabled=true --set components.cni.namespace=kube-system
+          kubectl --context eks apply -n istio-system -f mesh/install/expose-services.yaml
+          kubectl --context gke apply -n istio-system -f mesh/install/expose-services.yaml
+
+      - name: Mesh — exchange remote secrets (endpoint discovery)
+        if: github.event.inputs.component == 'all' || github.event.inputs.component == 'mesh' || github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          istioctl create-remote-secret --context eks --name eks | kubectl apply --context gke -f -
+          istioctl create-remote-secret --context gke --name gke | kubectl apply --context eks -f -
+          echo "Verifying cross-cluster discovery:"; istioctl --context eks remote-clusters || true
+
+      # ---- 2. GLOBAL ACTIVE-ACTIVE APP ----
+      - name: App — deploy global service to both clusters
+        if: github.event.inputs.component == 'all' || github.event.inputs.component == 'app' || github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          for pair in "eks:aws" "gke:gcp"; do
+            ctx="${pair%%:*}"; cloud="${pair##*:}"
+            sed "s/REPLACE_ME/$cloud/" mesh/apps/hello-global.yaml | kubectl --context "$ctx" apply -f -
+            kubectl --context "$ctx" apply -f mesh/apps/locality-failover.yaml
+          done
+          kubectl --context eks -n demo rollout status deploy/hello --timeout=180s || true
+          kubectl --context gke -n demo rollout status deploy/hello --timeout=300s || true
+
+      # ---- 3. OBSERVABILITY ----
+      - name: Observability — kube-prometheus-stack + node-exporter on EKS
+        if: github.event.inputs.component == 'all' || github.event.inputs.component == 'observability' || github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          helm upgrade --install kube-prom prometheus-community/kube-prometheus-stack \
+            --kube-context eks -n observability --create-namespace \
+            --set grafana.enabled=true --set prometheus.prometheusSpec.retention=2d \
+            --wait --timeout 10m
+          echo "GKE Autopilot: node metrics come from Google Managed Prometheus (enabled by default)."
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Platform install"
+            echo "- EKS context: eks   ·   GKE context: gke"
+            echo "- Mesh: Istio $ISTIO_VERSION multi-primary"
+            echo "- Verify cross-cloud LB:  kubectl --context eks -n demo exec deploy/hello -- sh -c 'for i in 1 2 3 4 5 6; do wget -qO- hello.demo.svc.cluster.local; echo; done'"
+          } >> "$GITHUB_STEP_SUMMARY"
