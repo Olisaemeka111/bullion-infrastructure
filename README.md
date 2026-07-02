@@ -55,6 +55,8 @@ mesh/                                            # ACTIVE-ACTIVE fabric (joins t
   apps/       global service + locality-aware load balancing + failover
   observability/  per-node node-exporter DaemonSet + federated Prometheus
   data/       CockroachDB multi-region (multi-master, survive region failure)
+.github/workflows/  ci · security · deploy · platform · database · game
+ruff.toml                                        # Python lint config
 DEPLOY.md  CICD.md                               # deploy + CI/CD (incl. secret) guides
 ```
 
@@ -98,6 +100,13 @@ a `production` environment), and `destroy` on manual dispatch — with **keyless
 auth** to all three clouds (no static cloud keys). One-time setup (remote state +
 OIDC) is in **[CICD.md](CICD.md)**.
 
+### Security scanning (DevSecOps)
+[.github/workflows/security.yml](.github/workflows/security.yml) runs on every
+push/PR (no cloud creds) and **fails on CRITICAL/HIGH** findings or any secret:
+**CodeQL** (SAST), **Gitleaks** (secrets), **Trivy** + **OWASP Dependency-Check**
+(vulns/deps), and **Checkov + tfsec + KICS** (Terraform IaC). Linting is enforced
+by the `lint` job in `ci.yml` (**Ruff**) plus `terraform fmt -check`.
+
 ### Secret management
 Cloud auth is **keyless OIDC** — no static cloud keys exist. The only values stored
 are the non-sensitive OIDC **identifiers** (AWS role ARN, GCP Workload Identity
@@ -119,7 +128,8 @@ networking fabric and operational runbook are unchanged — see the copied
 | IaC | illustrative stubs | real, `validate`-clean, deployable |
 | Purpose | prove design at scale, offline | test an actual cloud deployment |
 | Control plane | identical | identical |
-| Tests | 74, all green | 74, all green |
+| Tests | 80, all green | 80, all green |
+| Pipeline scans | tests + fmt | + Ruff lint & DevSecOps (CodeQL/Gitleaks/Trivy/OWASP/Checkov/tfsec/KICS) |
 
 ## Active-active, not backup
 Both clouds serve traffic concurrently and the fleet behaves as one:
@@ -144,6 +154,10 @@ telemetry) remain across both clouds — see `mesh/observability/`.
   `sim.observe` (writes `dashboard.html`).
 - **IaC valid** — `terraform validate` → "Success!"; `terraform fmt` clean;
   `terraform init` resolves all providers/modules.
+- **Lint clean** — `ruff check` passes; **CI green** (lint + 80 tests × Py 3.11–3.13).
+- **Security scans wired** — CodeQL + Gitleaks pass; Trivy/OWASP/Checkov/tfsec/KICS
+  run on every push and gate on CRITICAL/HIGH (currently surfacing Terraform
+  hardening items to triage).
 
 > Cloud resources cost money. Always `terraform destroy` after testing. EKS and
 > GKE Standard bill per node + control plane; the cross-cloud VPN + LoadBalancers

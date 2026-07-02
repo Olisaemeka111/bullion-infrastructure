@@ -146,6 +146,9 @@
     <li>A real <b>global active-active application</b> (the board game) built from source to GHCR
     and served from both clouds behind public ingress LoadBalancers.</li>
     <li>Full <b>CI/CD</b> (GitHub Actions) with keyless OIDC auth and approval gates.</li>
+    <li>A <b>DevSecOps security gate</b> on every push/PR — SAST (CodeQL), secret scanning
+    (Gitleaks), dependency/vuln scanning (Trivy, OWASP Dependency-Check) and IaC scanning
+    (Checkov, tfsec, KICS), plus Ruff linting.</li>
     <li>Centralised <b>observability</b> (Prometheus/Grafana).</li>
   </ul>
   <h3>On the roadmap</h3>
@@ -294,18 +297,26 @@
   <div class="sec-head"><span class="sec-num" style="background:var(--cicd)">6</span><h2>CI/CD &amp; automation</h2></div>
   <table>
     <tr><th>Pipeline</th><th>Responsibility</th><th>Trigger / gate</th></tr>
-    <tr><td><code>ci.yml</code></td><td>80 unit/integration tests (stdlib) + <code>terraform fmt</code>/<code>validate</code></td><td>every push/PR · no cloud creds</td></tr>
+    <tr><td><code>ci.yml</code></td><td>Ruff lint + 80 unit/integration tests (stdlib) + <code>terraform fmt</code>/<code>validate</code></td><td>every push/PR · no cloud creds</td></tr>
+    <tr><td><code>security.yml</code></td><td>DevSecOps scans: CodeQL, Gitleaks, Trivy, OWASP Dependency-Check, Checkov, tfsec, KICS</td><td>every push/PR · gate on CRITICAL/HIGH</td></tr>
     <tr><td><code>deploy.yml</code></td><td>Terraform infra (EKS, GKE, VPN): plan → apply → destroy</td><td>PR=plan · merge=apply (gated) · dispatch=destroy</td></tr>
     <tr><td><code>platform.yml</code></td><td>Istio join + global app + observability across both clusters</td><td>dispatch / mesh changes (gated)</td></tr>
+    <tr><td><code>database.yml</code> · <code>game.yml</code></td><td>CockroachDB (both clusters) · board game (build → GHCR → both clusters)</td><td>dispatch / path changes</td></tr>
   </table>
   <div class="grid2">
-    <div class="card cicd"><h4>Flow</h4><p>Open PR → automated <b>plan</b> posted as a comment →
-    review → merge → <b>apply</b> pauses for approval in the <code>production</code> environment →
-    resources provision. A plan summary lists every resource to be created.</p></div>
+    <div class="card cicd"><h4>Flow</h4><p>Open PR → lint + tests + security scans run → automated
+    <b>plan</b> posted as a comment → review → merge → <b>apply</b> pauses for approval in the
+    <code>production</code> environment → resources provision.</p></div>
     <div class="card sec"><h4>Keyless auth</h4><p>AWS via IAM role + GitHub OIDC; GCP via Workload
     Identity Federation; tokens are minted per-run and short-lived. No static cloud keys live in
     GitHub.</p></div>
   </div>
+  <div class="card sec" style="margin-top:12px"><h4>Shift-left security gate (<code>security.yml</code>)</h4>
+    <p>Every push/PR runs, with no cloud credentials, gating on <b>CRITICAL/HIGH</b> and any secret:
+    <b>SAST</b> = CodeQL (Python) · <b>Secrets</b> = Gitleaks (full history) · <b>Vulns/deps</b> =
+    Trivy + OWASP Dependency-Check (CVSS ≥ 7) · <b>IaC</b> = Checkov + tfsec + KICS over
+    <code>iac/terraform</code>. Findings upload to the Security tab as SARIF. CodeQL and Gitleaks
+    pass clean; the IaC and dependency scanners surface real Terraform hardening items for triage.</p></div>
 </section>
 
 <!-- 7. SECURITY -->
@@ -433,6 +444,7 @@ kubectl --context eks -n demo exec curl -c curl -- sh -c \
     <tr><td>North-south ingress gateways (public LB :80)</td><td class="ok">✓ live</td></tr>
     <tr><td>Board game — global active-active app (GHCR → both clouds)</td><td class="ok">✓ live</td></tr>
     <tr><td>Observability (Prometheus/Grafana)</td><td class="ok">✓ live</td></tr>
+    <tr><td>DevSecOps scans + lint (CodeQL/Gitleaks/Trivy/OWASP/Checkov/tfsec/KICS/Ruff)</td><td class="ok">✓ wired</td></tr>
     <tr><td>Cross-cloud VPN (AWS↔GCP)</td><td class="ok">✓ live (4 tunnels)</td></tr>
     <tr><td>Central CockroachDB (multi-region, via CI/CD)</td><td class="ok">✓ live — 4 nodes</td></tr>
     <tr><td>In-cluster control plane + dashboard</td><td class="wait">planned</td></tr>
@@ -472,7 +484,8 @@ mesh/install/    Istio multi-primary (CA, IOPs, east-west + ingress, secrets)
 mesh/apps/       global service + active-active DestinationRule + board game
 mesh/observability/  node-exporter + federated Prometheus
 mesh/data/       CockroachDB multi-region (cross-cloud, via database.yml)
-.github/workflows/  ci · deploy · platform · database · game
+.github/workflows/  ci · security · deploy · platform · database · game
+ruff.toml        Python lint config (Ruff)
 control_plane/ providers/ agent/ security/
   networking/ workflows/ sim/ tests/   (offline reference)
 DEPLOY · CICD · INFRASTRUCTURE · ARCHITECTURE · RUNBOOK · TESTING</pre>

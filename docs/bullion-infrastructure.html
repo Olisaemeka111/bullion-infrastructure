@@ -162,9 +162,11 @@
   cloud keys.</div>
   <table>
     <tr><th>Workflow</th><th>Purpose</th><th>Trigger</th></tr>
-    <tr><td><code>ci.yml</code></td><td>80 stdlib tests + <code>terraform fmt/validate</code> (no creds)</td><td>every push / PR</td></tr>
+    <tr><td><code>ci.yml</code></td><td>Ruff lint + 80 stdlib tests + <code>terraform fmt/validate</code> (no creds)</td><td>every push / PR</td></tr>
+    <tr><td><code>security.yml</code></td><td>DevSecOps scans — CodeQL, Gitleaks, Trivy, OWASP Dependency-Check, Checkov, tfsec, KICS</td><td>every push / PR</td></tr>
     <tr><td><code>deploy.yml</code></td><td>Terraform: EKS, GKE, cross-cloud VPN — plan → gated apply → destroy</td><td>PR / push / dispatch</td></tr>
     <tr><td><code>platform.yml</code></td><td>Istio multi-primary join + global app + observability</td><td>dispatch / mesh changes</td></tr>
+    <tr><td><code>database.yml</code> · <code>game.yml</code></td><td>CockroachDB (both clusters) · board game (build → GHCR → both clusters)</td><td>dispatch / path changes</td></tr>
   </table>
   <div class="grid2">
     <div class="card cicd"><h4>Keyless cloud auth</h4>
@@ -175,6 +177,13 @@
       non-sensitive OIDC identifiers are stored, as <b>GitHub Actions secrets/variables</b>
       (set via <code>iac/generate-credentials.sh</code> using the <code>gh</code> CLI).</p></div>
   </div>
+  <div class="card cicd" style="margin-top:12px"><h4>DevSecOps security gate (<code>security.yml</code>)</h4>
+    <p>Runs on every push/PR with <b>no cloud creds</b>, gating on <b>CRITICAL/HIGH</b>
+    findings and any detected secret; SARIF is uploaded to the Security tab.
+    <b>SAST:</b> CodeQL (Python). <b>Secrets:</b> Gitleaks (full history).
+    <b>Vulns/deps:</b> Trivy fs + OWASP Dependency-Check (fail on CVSS ≥ 7).
+    <b>IaC:</b> Checkov + tfsec + KICS over <code>iac/terraform</code>. CodeQL and
+    Gitleaks pass; the IaC/dependency scanners surface real hardening items to triage.</p></div>
 </section>
 
 <!-- 4. MESH -->
@@ -218,6 +227,7 @@ for i in $(seq 20); do curl -s hello.demo.svc.cluster.local; done
     <tr><td>2</td><td>Cloud identities via OIDC (AWS role, GCP WIF)</td><td class="ok">✓</td></tr>
     <tr><td>3</td><td>Remote state (S3 native locking)</td><td class="ok">✓</td></tr>
     <tr><td>4</td><td>CI/CD pipelines + gated production env</td><td class="ok">✓</td></tr>
+    <tr><td>4b</td><td>DevSecOps scans (CodeQL, Gitleaks, Trivy, OWASP, Checkov, tfsec, KICS) + Ruff lint</td><td class="ok">✓ wired</td></tr>
     <tr><td>5</td><td>Provision EKS (VPC, node group)</td><td class="ok">✓</td></tr>
     <tr><td>6</td><td>Provision GKE (Standard, private nodes)</td><td class="ok">✓</td></tr>
     <tr><td>7</td><td>Local kubectl access to both clusters</td><td class="ok">✓</td></tr>

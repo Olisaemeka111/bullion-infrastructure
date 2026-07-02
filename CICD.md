@@ -11,6 +11,13 @@ The pipeline ([.github/workflows/deploy.yml](.github/workflows/deploy.yml)) runs
 Auth is **keyless (OIDC)** to all three clouds — no static cloud keys in GitHub.
 There is a one-time setup below (do it once; then it's just PRs).
 
+> **Quality & security gates run separately, with no cloud creds:**
+> [`ci.yml`](.github/workflows/ci.yml) (Ruff lint + 80 tests + `terraform
+> fmt/validate`) and [`security.yml`](.github/workflows/security.yml) — the
+> DevSecOps stage: **CodeQL** (SAST), **Gitleaks** (secrets), **Trivy** + **OWASP
+> Dependency-Check** (vulns/deps), **Checkov + tfsec + KICS** (Terraform IaC).
+> Both run on every push/PR and gate on CRITICAL/HIGH findings.
+
 ---
 
 ## 0. Prerequisites (one-time)

@@ -74,11 +74,29 @@ All deploys run through **GitHub Actions** with **keyless OIDC** auth and a gate
 
 | Workflow | Purpose | Trigger |
 |---|---|---|
-| `ci.yml` | 80 stdlib tests + `terraform fmt/validate` (no cloud creds) | every push/PR |
+| `ci.yml` | Ruff lint + 80 stdlib tests + `terraform fmt/validate` (no cloud creds) | every push/PR |
+| `security.yml` | DevSecOps scans — CodeQL, Gitleaks, Trivy, OWASP Dependency-Check, Checkov, tfsec, KICS | every push/PR |
 | `deploy.yml` | Terraform: EKS, GKE, (cross-cloud VPN) — `plan` on PR, gated `apply` on merge, `destroy` on dispatch | PR / push / dispatch |
 | `platform.yml` | Istio multi-primary join + global app + observability across both clusters | dispatch / mesh changes |
 | `database.yml` | Cross-cloud CockroachDB: discover node IPs → deploy DaemonSet to both clusters → `init` once | dispatch / `mesh/data/**` |
 | `game.yml` | Build the board game → push to GHCR → deploy active-active to both clusters | dispatch / `mesh/apps/game.yaml` |
+
+### Security scanning (`security.yml`)
+A dedicated DevSecOps stage runs on every push/PR (no cloud creds), gating on
+**CRITICAL/HIGH** findings and any detected secret; SARIF is uploaded to the repo
+Security tab where supported.
+
+| Stage | Tool | Scope |
+|---|---|---|
+| SAST | CodeQL | Python control plane |
+| Secrets | Gitleaks | full git history |
+| Vulns / deps | Trivy (fs) + OWASP Dependency-Check | dependencies / filesystem (fail on CVSS ≥ 7) |
+| IaC security | Checkov + tfsec + KICS | `iac/terraform` |
+
+Lint is enforced by the `lint` job in `ci.yml` (Ruff, config in `ruff.toml`) plus
+`terraform fmt -check`. The IaC scanners intentionally surface real hardening items
+in the Terraform (e.g. module version pinning, encryption, public endpoints) — fix
+or baseline them with inline skips as the code is hardened.
 
 - **AWS auth:** GitHub OIDC → IAM role `fleet-mini-gha` (no static keys).
 - **GCP auth:** GitHub OIDC → Workload Identity Federation → service account `fleet-mini-gha`.
@@ -133,10 +151,11 @@ fleet-wide federated view is described in `mesh/observability/`.
 
 | # | Task | Outcome |
 |---|---|---|
-| 1 | Tooling install (gh, terraform, aws, gcloud, az, kubectl, istioctl, hcp) | ✅ |
+| 1 | Tooling install (gh, terraform, aws, gcloud, az, kubectl, istioctl) | ✅ |
 | 2 | Cloud identities via **OIDC** (AWS role, GCP WIF) | ✅ |
 | 3 | Remote state (S3 native locking) | ✅ |
-| 4 | CI/CD pipelines (`ci`, `deploy`, `platform`) + gated `production` env | ✅ |
+| 4 | CI/CD pipelines (`ci`, `security`, `deploy`, `platform`, `database`, `game`) + gated `production` env | ✅ |
+| 4b | DevSecOps scans — CodeQL, Gitleaks, Trivy, OWASP Dependency-Check, Checkov, tfsec, KICS + Ruff lint | ✅ |
 | 5 | Provision **EKS** (VPC, node group) | ✅ |
 | 6 | Provision **GKE** | ✅ (Standard, private nodes) |
 | 7 | Local `kubectl` access to both clusters | ✅ |
@@ -227,6 +246,7 @@ mesh/install/       Istio multi-primary (shared CA, IOPs, east-west + ingress, r
 mesh/apps/          global service + active-active DestinationRule + board game
 mesh/observability/ node-exporter DaemonSet + federated Prometheus
 mesh/data/          CockroachDB multi-region (cross-cloud, deployed via database.yml)
-.github/workflows/  ci.yml · deploy.yml · platform.yml · database.yml · game.yml
+.github/workflows/  ci.yml · security.yml · deploy.yml · platform.yml · database.yml · game.yml
+ruff.toml           Python lint config (Ruff)
 DEPLOY.md · CICD.md · ARCHITECTURE.md · RUNBOOK.md · TESTING.md
 ```
