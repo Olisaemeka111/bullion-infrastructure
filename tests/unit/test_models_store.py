@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from control_plane.models import Node, NodePool, Cluster, NodeState, ClusterState
+from control_plane.models import Node, NodePool, Cluster, NodeState
 from control_plane.store import Store
 
 
@@ -41,9 +41,11 @@ class TestStore(unittest.TestCase):
         a = Node(pool="p", cluster="c", provider="aws", instance_type="t")
         b = Node(pool="p", cluster="c", provider="aws", instance_type="t")
         b.state = NodeState.TERMINATED
-        s.put_node(a); s.put_node(b)
+        s.put_node(a)
+        s.put_node(b)
         self.assertEqual(len(s.live_nodes_in_pool("c", "p")), 0)
-        a.state = NodeState.HEALTHY; s.put_node(a)
+        a.state = NodeState.HEALTHY
+        s.put_node(a)
         self.assertEqual(len(s.live_nodes_in_pool("c", "p")), 1)
 
     def test_persistence_roundtrip(self):

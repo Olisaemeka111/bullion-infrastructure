@@ -9,7 +9,6 @@ Prometheus server could scrape verbatim.
 from __future__ import annotations
 
 import threading
-from typing import Iterable
 
 
 def _labels_key(labels: dict) -> tuple:

@@ -1,7 +1,7 @@
 """Integration: durable workflow orchestration (Temporal-style)."""
 import unittest
 
-from tests.helpers import make_env, pool, assert_system_invariants, assert_homogeneous
+from tests.helpers import make_env, pool, assert_homogeneous
 from control_plane.models import NodeState
 from workflows.orchestration import (cluster_bringup_workflow,
                                       cluster_decommission_workflow,

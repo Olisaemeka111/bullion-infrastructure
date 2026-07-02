@@ -1,7 +1,7 @@
 """Unit: secure-by-default gate, admission (PSS), RBAC, hardening."""
 import unittest
 
-from control_plane.models import Node, NodeState
+from control_plane.models import Node
 from security import policy
 from security.admission import admit, WorkloadSpec
 from security.rbac import authorize, ROLES

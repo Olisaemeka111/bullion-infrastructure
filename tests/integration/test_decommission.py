@@ -3,7 +3,6 @@ import unittest
 
 from tests.helpers import make_env, pool, assert_system_invariants
 from control_plane.models import NodeState, ClusterState
-from control_plane.state_machine import IllegalTransition
 
 
 class TestDecommission(unittest.TestCase):

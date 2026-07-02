@@ -1,7 +1,7 @@
 """Unit: network fabric model (cloud + host networking)."""
 import unittest
 
-from networking.fabric import (build_fabric, ClusterFabric, CrossCloudMesh,
+from networking.fabric import (build_fabric, CrossCloudMesh,
                                PROVIDER_FABRIC_DEFAULTS)
 
 

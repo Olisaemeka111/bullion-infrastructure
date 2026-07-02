@@ -14,7 +14,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from control_plane.models import NodePool, NodeState, ClusterState, LIVE_STATES
+from control_plane.models import NodePool, NodeState, ClusterState
 from control_plane.store import Store
 from control_plane.api import ControlPlaneAPI
 from control_plane.reconciler import Reconciler

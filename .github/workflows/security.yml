@@ -1,0 +1,155 @@
+name: security
+
+# DevSecOps security-analysis stage. Runs on every push/PR (no cloud creds needed).
+# Gate policy: FAIL the build on CRITICAL/HIGH findings and on any detected secret.
+# Findings are also uploaded to the repo Security tab (SARIF) where supported.
+#
+#   SAST         -> CodeQL (Python)
+#   Secrets      -> Gitleaks
+#   Vulns/deps   -> Trivy (filesystem) + OWASP Dependency-Check
+#   IaC security -> Checkov + tfsec + KICS  (scan iac/terraform)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # upload SARIF to the Security tab (public repo = free)
+  actions: read
+
+jobs:
+  # ---------------------------------------------------------------- SAST -----
+  codeql:
+    name: SAST · CodeQL (python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+
+  # ------------------------------------------------------------- SECRETS -----
+  secrets:
+    name: Secrets · Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # full history so gitleaks scans all commits
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # -------------------------------------------------------- VULNS / DEPS -----
+  trivy:
+    name: Vulns · Trivy (fs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy fs — SARIF for the Security tab (non-blocking)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+      - name: Trivy fs — GATE (fail on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  owasp_dependency_check:
+    name: Deps · OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: OWASP Dependency-Check (fail on CVSS >= 7)
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: bullion-cluster-infra-mini
+          path: "."
+          format: "HTML,SARIF"
+          # NVD downloads are rate-limited without a key — add secrets.NVD_API_KEY
+          # (free from nvd.nist.gov) for reliable/fast runs, then append:
+          #   --nvdApiKey ${{ secrets.NVD_API_KEY }}
+          args: >-
+            --failOnCVSS 7
+            --enableRetired
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: reports
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: reports/dependency-check-report.sarif
+          category: owasp-dependency-check
+
+  # -------------------------------------------------------- IaC SECURITY -----
+  checkov:
+    name: IaC · Checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: iac/terraform
+          framework: terraform
+          soft_fail: false           # gate: non-zero exit on findings
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov.sarif
+          category: checkov
+
+  tfsec:
+    name: IaC · tfsec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: iac/terraform
+          # action returns non-zero on any finding -> gates the build
+
+  kics:
+    name: IaC · KICS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: checkmarx/kics-github-action@v2.1.3
+        with:
+          path: iac/terraform
+          fail_on: high,critical
+          output_path: kics-results
+          output_formats: json,sarif
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kics-results
+          path: kics-results
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: kics-results/results.sarif
+          category: kics

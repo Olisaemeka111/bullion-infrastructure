@@ -1,9 +1,7 @@
 """Integration: metrics emitted by the live control loop + dashboard rendering."""
-import time
 import unittest
 
 from tests.helpers import make_env, multicloud_pools
-from control_plane.models import NodeState
 from observability.dashboard import DashboardData, render_html
 
 

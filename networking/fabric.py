@@ -80,7 +80,7 @@ class CrossCloudMesh:
         return link
 
     def to_dict(self) -> dict:
-        return {"links": [asdict(l) for l in self.links]}
+        return {"links": [asdict(link) for link in self.links]}
 
 
 # Sensible per-provider defaults for the fabric (maps neutral model -> primitives)

@@ -13,7 +13,7 @@ import time
 import unittest
 
 from tests.helpers import make_env, pool, assert_system_invariants
-from control_plane.models import NodeState, ClusterState
+from control_plane.models import NodeState
 
 PROVIDERS = ["aws", "gcp", "azure", "baremetal"]
 CASES = 25

@@ -5,7 +5,6 @@ import time
 import unittest
 
 from tests.helpers import make_env, multicloud_pools, pool, assert_system_invariants
-from control_plane.models import NodeState
 
 RUN_SLOW = os.environ.get("CLUSTERINFRA_RUN_SLOW") == "1"
 

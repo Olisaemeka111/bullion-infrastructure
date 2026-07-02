@@ -1,0 +1,9 @@
+# Ruff config for the control-plane Python (stdlib-only project).
+# Uses Ruff's default rule set (pyflakes F + pycodestyle E/W essentials).
+target-version = "py311"
+line-length = 120
+
+[lint.per-file-ignores]
+# helpers.py intentionally inserts the repo root onto sys.path BEFORE importing
+# project modules, so module-level imports can't all sit at the top (E402).
+"tests/helpers.py" = ["E402"]
